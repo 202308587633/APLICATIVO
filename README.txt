@@ -1,2 +1,2 @@
-Primeiro arquivo publicado no GitHub
-Primeira alteração registrada.
+Aplicativo destinado a baixar teses e dissertações de direito para fins de pesquisa acadêmica.
+Autor: Roberto Rodrigues Costa
