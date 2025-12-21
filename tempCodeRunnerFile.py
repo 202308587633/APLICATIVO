@@ -1,75 +1,27 @@
-import tkinter as tk
-from tkinter import ttk, messagebox
-import threading
-import leitor_de_paginas
 
-class AppPesquisa:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Buscador Acadêmico RAG")
-        self.root.geometry("800x500")
+    def solicitar_busca_sucupira(self):
+        """Abre um diálogo para o usuário informar a sigla."""
+        sigla = simpledialog.askstring("Plataforma Sucupira", "Informe a Sigla da Universidade:")
+        if sigla:
+            self.lbl_status.config(text=f"Buscando ID Sucupira para {sigla}...", fg="orange")
+            # Dispara thread para não travar a UI
+            threading.Thread(target=self.processar_sucupira, args=(sigla,), daemon=True).start()
 
-        # --- Elementos da Interface ---
-        tk.Label(root, text="URL do BDTD:", font=("Arial", 10, "bold")).pack(pady=5)
+    def processar_sucupira(self, sigla):
+        """Executa a raspagem e salva no banco de dados."""
+        id_sucupira = scraper_sucupira.buscar_id_sucupira(sigla)
         
-        url = "https://bdtd.ibict.br/vufind/Search/Results?join=AND&bool0%5B%5D=AND&lookfor0%5B%5D=%22an%C3%A1lise+de+discurso%22&type0%5B%5D=AllFields&lookfor0%5B%5D=direito&type0%5B%5D=AllFields&illustration=-1&daterange%5B%5D=publishDate&publishDatefrom=2021&publishDateto=2021"
-
-        self.ent_url = tk.Entry(root, width=80)
-        self.ent_url.pack(pady=5)
-        self.ent_url.insert(0, url)        
-
-        self.btn_buscar = tk.Button(root, text="Iniciar Busca", command=self.disparar_busca, bg="green", fg="white")
-        self.btn_buscar.pack(pady=10)
-
-        self.lbl_status = tk.Label(root, text="Aguardando comando...", fg="blue")
-        self.lbl_status.pack()
-
-        # --- Tabela de Resultados (Treeview) ---
-        self.tree = ttk.Treeview(root, columns=("Título", "Autor"), show='headings')
-        self.tree.heading("Título", text="Título do Trabalho")
-        self.tree.heading("Autor", text="Autor")
-        self.tree.column("Título", width=500)
-        self.tree.column("Autor", width=250)
-        self.tree.pack(pady=10, fill="both", expand=True)
-
-    def disparar_busca(self):
-        url = self.ent_url.get()
-        if not url:
-            messagebox.showwarning("Aviso", "Insira uma URL válida!")
-            return
-
-        # Mudamos o estado da interface para o usuário saber que algo está acontecendo
-        self.btn_buscar.config(state="disabled")
-        self.lbl_status.config(text="Buscando dados no IBICT... aguarde.", fg="orange")
-        
-        # Criamos a Thread para não travar a janela
-        thread = threading.Thread(target=self.processar_em_segundo_plano, args=(url,))
-        thread.start()
-
-    def processar_em_segundo_plano(self, url):
-        try:
-            dados = leitor_de_paginas.buscar_trabalhos(url)
-            
-            # Para atualizar a interface (Treeview), precisamos voltar para a Main Thread
-            self.root.after(0, self.atualizar_tabela, dados)
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Erro", f"Falha na busca: {e}"))
-            self.root.after(0, lambda: self.btn_buscar.config(state="normal"))
-
-    def atualizar_tabela(self, dados):
-        # Limpa a tabela anterior
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        # Insere os novos dados
-        for d in dados:
-            self.tree.insert("", "end", values=(d["Título"], d["Autor"]))
-
-        self.lbl_status.config(text=f"Busca finalizada! {len(dados)} trabalhos encontrados.", fg="green")
-        self.btn_buscar.config(state="normal")
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = AppPesquisa(root)
-    root.mainloop()
-
+        if id_sucupira:
+            try:
+                # Salva no banco usando a função que já temos no database.py
+                salvar_id_sucupira(sigla, id_sucupira)
+                
+                msg = f"Sucesso! ID {id_sucupira} vinculado à {sigla}."
+                self.root.after(0, lambda: messagebox.showinfo("Sucupira", msg))
+                self.root.after(0, lambda: self.lbl_status.config(text=msg, fg="green"))
+            except Exception as e:
+                err = str(e)
+                self.root.after(0, lambda: messagebox.showerror("Erro Banco", f"Falha ao salvar: {err}"))
+        else:
+            self.root.after(0, lambda: messagebox.showwarning("Sucupira", "Instituição não localizada na busca geral."))
+            self.root.after(0, lambda: self.lbl_status.config(text="Busca Sucupira falhou.", fg="red"))

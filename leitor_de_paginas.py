@@ -6,82 +6,100 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from trata_ies import extrair_unisinos, extrair_ufop, extrair_unb, extrair_generico_dspace
+from trata_ies import *
 
-def ler_detalhes_trabalho(url_detalhe):
+def configurar_driver():
     edge_options = Options()
     edge_options.add_argument("--headless=new")
     edge_options.add_argument("--disable-gpu")
     edge_options.add_argument("--no-sandbox")
+    edge_options.add_argument('--ignore-certificate-errors')
+    edge_options.add_argument('--ignore-ssl-errors')
     edge_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    return webdriver.Edge(options=edge_options)
+
+def aguardar_carregamento(driver, wait, url_l):
+    if "unisinos.br" in url_l:
+        try:
+            wait.until(EC.presence_of_element_located(
+                (By.CSS_SELECTOR, "meta[name*='dc.'], ds-item-page-fields, .ds-div-head")
+            ))
+            time.sleep(2) 
+        except: pass
+    elif any(ies in url_l for ies in ["unifor.br", "sophia.com.br", "ufop.br"]):
+        time.sleep(5) 
+    else:
+        try:
+            wait.until(EC.presence_of_element_located((By.TAG_NAME, "body")))
+        except: pass
+
+
+def extrair_resumo(soup):
+    # Tenta metadados
+    meta_res = (soup.find('meta', attrs={'name': 'dc.description.abstract', 'xml:lang': 'pt_BR'}) or 
+                soup.find('meta', attrs={'name': 'dc.description.abstract'}) or 
+                soup.find('meta', attrs={'name': 'description'}))
     
-    driver = webdriver.Edge(options=edge_options)
-    wait = WebDriverWait(driver, 20)
+    resumo = meta_res.get('content', '') if meta_res else ""
+    
+    # Fallback Visual
+    if len(resumo) < 50:
+        tag_vis = soup.find(['div', 'td'], class_=re.compile(r'DocumentoTextoResumo|abstract|description', re.I))
+        if tag_vis: resumo = tag_vis.get_text(separator=' ', strip=True)
+    
+    return re.sub(r'\s+', ' ', resumo).strip() or "Resumo não disponível."
+
+def extrair_pdf(soup, url_detalhe):
+    # Lógica de metadados
+    meta_pdf = soup.find('meta', attrs={'name': re.compile(r'citation_pdf_url|dc.identifier.uri', re.I)})
+    if meta_pdf and meta_pdf.get('content') and ".pdf" in meta_pdf.get('content').lower():
+        return meta_pdf.get('content')
+
+    # Lógica de links (Fallback)
+    pdf_link = soup.find('a', href=re.compile(r'bitstream|Tese_Original\.pdf|download|view|\.pdf', re.I))
+    if pdf_link:
+        href = pdf_link.get('href').split('?')[0]
+        if not href.startswith('http'):
+            base = "/".join(url_detalhe.split("/")[:3])
+            return base + (href if href.startswith('/') else '/' + href)
+        return href
+    return "Link do PDF não encontrado"
+
+
+def ler_detalhes_trabalho(url_detalhe):
+    driver = configurar_driver()
+    wait = WebDriverWait(driver, 25)
+    url_l = url_detalhe.lower()
     
     try:
         driver.get(url_detalhe)
+        aguardar_carregamento(driver, wait, url_l)
         
-        # --- ESPERA INTELIGENTE MULTI-SISTEMA ---
-        try:
-            # Espera até que QUALQUER um desses elementos apareça:
-            # .simple-item-view-description (DSpace clássico/Unisinos)
-            # ds-item-page (UFOP/DSpace Angular)
-            # .dc_description_ppg (UnB)
-            wait.until(EC.presence_of_element_located((
-                By.CSS_SELECTOR, "ds-item-page, .simple-item-view-description, .dc_description_ppg, #ds-content"
-            )))
-        except:
-            # Se nenhum aparecer em 20s, espera um pouco mais por segurança
-            time.sleep(3) 
-
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-        # 1. Identificar Universidade e extrair programa
-        if "ufop.br" in url_detalhe:
-            uni = "UFOP"
-            # Pequeno fôlego extra para o Angular renderizar os textos internos
-            time.sleep(2) 
-            # Re-processa o soup para garantir que pegamos o HTML final renderizado
-            soup = BeautifulSoup(driver.page_source, 'html.parser')
-            prog = extrair_ufop(soup)
-        elif "unisinos.br" in url_detalhe or "jesuita.org.br" in url_detalhe:
-            uni = "UNISINOS"
-            prog = extrair_unisinos(soup)
-        elif "unb.br" in url_detalhe:
-            uni = "UnB"
-            prog = extrair_unb(soup)
-        else:
-            uni = "Outra"
-            prog = extrair_generico_dspace(soup)
-
-        # 2. Limpeza e Classificação
-        prog_limpo = re.sub(r'^\d+[A-Z0-9]*\s+', '', prog)
-        # Classificação baseada no PPG
-        classificacao = "Jurídico" if "direito" in prog_limpo.lower() else "Não Jurídico"
-
-        # 3. Extração do Resumo (A Unisinos usa classes 'simple-item-view-description')
-        resumo = "Resumo não disponível."
-        # Procura em meta tags primeiro (mais estável)
-        meta_resumo = soup.find('meta', attrs={'name': 'DC.description', 'xml:lang': 'pt_BR'}) or \
-                      soup.find('meta', attrs={'name': 'DCTERMS.abstract'})
         
-        if meta_resumo:
-            resumo = meta_resumo.get('content', resumo)
-        else:
-            # Fallback visual
-            resumo_tag = soup.find('div', class_='simple-item-view-description')
-            if resumo_tag:
-                resumo = resumo_tag.get_text(strip=True).replace("Resumo:", "").strip()
-
+        # 1. IES e Programa (usando suas funções do trata_ies.py)
+        uni = identificar_ies(url_l) # Criar esta pequena lógica
+        prog = obter_programa_limpo(soup, uni, driver.page_source) # Criar esta
+        
+        # 2. Resumo e PDF (novas funções atômicas)
+        resumo = extrair_resumo(soup)
+        link_pdf = extrair_pdf(soup, url_detalhe)
+        
+        # 3. Classificação
+        is_juridico = "direito" in prog.lower() or "direito" in resumo.lower()[:200]
+        
         return {
             "resumo": resumo,
             "universidade": uni,
-            "programa": prog_limpo,
-            "classificacao": classificacao
+            "programa": prog,
+            "classificacao": "Jurídico" if is_juridico else "Não Jurídico",
+            "link_pdf": link_pdf
         }
+    except Exception as e:
+        return {"resumo": f"Erro: {e}", "universidade": "Erro", "programa": "Erro", "classificacao": "N/A", "link_pdf": "N/A"}
     finally:
         driver.quit()
-
+        
 def extrair_numero_paginas(soup):
     """Extrai o número da última página do elemento aria-label."""
     botao = soup.find('a', attrs={'aria-label': 'Ir para a última página'})
@@ -155,73 +173,5 @@ def realizar_busca_recursiva(url_base, callback_status):
             todos_os_trabalhos_da_url.extend(dados)
             
         return todos_os_trabalhos_da_url
-    finally:
-        driver.quit()
-
-def ler_detalhes_trabalho(url_detalhe):
-    edge_options = Options()
-    edge_options.add_argument("--headless=new")
-    driver = webdriver.Edge(options=edge_options)
-
-    try:
-        driver.get(url_detalhe)
-        time.sleep(3)
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-        # 1. Identificar Universidade
-        universidade = "UFPR" if "ufpr.br" in url_detalhe else "Outra/IBICT"
-       
-        # 2. Extrair o Programa (Estratégia específica para UFPR vs Geral)
-        programa_encontrado = "Não Identificado"
-        
-        if universidade == "UFPR":
-            # Busca a lista de breadcrumb que você informou
-            breadcrumb = soup.find('ul', class_='breadcrumb')
-            if breadcrumb:
-                # Pegamos todos os itens da lista
-                itens = breadcrumb.find_all('li')
-                # No DSpace da UFPR, o programa geralmente é o 3º item (índice 2)
-                # ou o antepenúltimo antes de "Ver item"
-                if len(itens) >= 3:
-                    # Tentamos o índice 2, mas validamos se não é um dos termos genéricos
-                    texto_candidato = itens[2].get_text(strip=True)
-                    if "Página inicial" not in texto_candidato and "BIBLIOTECA" not in texto_candidato:
-                        programa_encontrado = texto_candidato
-                    elif len(itens) >= 4:
-                        programa_encontrado = itens[3].get_text(strip=True)
-        
-        # Se não for UFPR ou se a busca anterior falhou, usa a busca genérica por rótulos
-        if programa_encontrado == "Não Identificado":
-            rotulos_alvo = ["Programa", "Unidade", "Departamento", "Curso", "Publisher"]
-            for rotulo in rotulos_alvo:
-                celula_rotulo = soup.find(['th', 'td', 'dt'], string=re.compile(rotulo, re.I))
-                if celula_rotulo:
-                    valor = celula_rotulo.find_next(['td', 'dd'])
-                    if valor:
-                        programa_encontrado = valor.get_text(strip=True)
-                        break
-
-        # 3. Classificação Jurídica
-        # Removemos códigos numéricos que às vezes aparecem no início (ex: 40001016071P8)
-        # para a classificação não se confundir
-        nome_limpo = re.sub(r'^\d+[A-Z0-9]*\s+', '', programa_encontrado)
-        
-        if "direito" in nome_limpo.lower():
-            classificacao = "Jurídico"
-        else:
-            classificacao = "Não Jurídico"
-
-        # 4. Extrair Resumo
-        resumo_tag = soup.find('div', class_='abstract') or \
-                     soup.find('div', class_='simple-item-view-description') or \
-                     soup.find('div', class_='item-view-field-value')
-        resumo = resumo_tag.get_text(strip=True) if resumo_tag else "Resumo não disponível."
-
-        return {
-            "resumo": resumo,
-            "universidade": universidade,
-            "programa": nome_limpo, # Retornamos o nome sem o código Capes
-            "classificacao": classificacao
-        }
     finally:
         driver.quit()

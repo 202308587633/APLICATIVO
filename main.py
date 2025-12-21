@@ -1,222 +1,261 @@
-import webbrowser
-import database 
-import tkinter as tk
-from tkinter import ttk, messagebox
-import threading
+from database import *
+from interface import InterfaceGrafica
 import leitor_de_paginas
-import importlib 
+import leitor_sucupira
+import tkinter as tk
+from tkinter import messagebox, simpledialog
+import threading
+import urllib.parse 
+import webbrowser
 
-class AppPesquisa:
-    def __init__(self, root):
-        importlib.reload(leitor_de_paginas)
-        self.root = root
-        self.root.title("Buscador Acadêmico RAG")
-        self.root.geometry("1000x600")
-
-        # --- Lista de URLs (Mantenha as suas aqui) ---
-        self.lista_de_urls = [
-            "https://bdtd.ibict.br/vufind/Search/Results?join=AND&bool0%5B%5D=AND&lookfor0%5B%5D=%22an%C3%A1lise+de+discurso%22&type0%5B%5D=AllFields&lookfor0%5B%5D=direito&type0%5B%5D=AllFields&illustration=-1&daterange%5B%5D=publishDate&publishDatefrom=2021&publishDateto=2021",
-            "https://bdtd.ibict.br/vufind/Search/Results?join=AND&bool0%5B%5D=AND&lookfor0%5B%5D=%22algoritmo%22&type0%5B%5D=AllFields&lookfor0%5B%5D=direito&type0%5B%5D=AllFields&illustration=-1&daterange%5B%5D=publishDate&publishDatefrom=2021&publishDateto=2021"
-        ]
-
-        # --- Título ---
-        tk.Label(root, text="Buscador BDTD - Doutorado", font=("Arial", 14, "bold")).pack(pady=10)
-
-        # --- Container para Botões ---
-        frame_botoes = tk.Frame(root)
-        frame_botoes.pack(pady=5)
-
-        self.btn_buscar = tk.Button(frame_botoes, text="Iniciar Pesquisa Múltipla", command=self.disparar_busca, 
-                                   bg="#2ecc71", fg="white", font=("Arial", 10, "bold"), padx=20)
-        self.btn_buscar.pack(side="left", padx=5)
-
-        self.btn_carregar = tk.Button(frame_botoes, text="Carregar Dados Salvos", command=self.carregar_do_banco,
-                                     bg="#3498db", fg="white", font=("Arial", 10, "bold"), padx=20)
-        self.btn_carregar.pack(side="left", padx=5)
-
-        # --- Status ---
-        self.lbl_status = tk.Label(root, text="Pronto para iniciar.", font=("Arial", 9, "italic"), fg="gray")
-        self.lbl_status.pack(pady=5)
-
-        # --- Frame da Tabela ---
-        frame_tabela = tk.Frame(root)
-        frame_tabela.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Configuração da Treeview (4 COLUNAS DEFINIDAS)
-        self.tree = ttk.Treeview(frame_tabela, columns=("Título", "Autor", "Ação", "Link"), show='headings')
+class AppController:
+    def __init__(self):
+        self.root = tk.Tk()
+        # Inicializa a View passando este Controller para os comandos
+        self.view = InterfaceGrafica(self.root, self)
         
-        self.tree.heading("Título", text="Título")
-        self.tree.heading("Autor", text="Autor")
-        self.tree.heading("Ação", text="Extrair Detalhes")
-        self.tree.heading("Link", text="Link") # Heading necessário para evitar erros internos
+        # Menu de contexto
+        self.menu_contexto = tk.Menu(self.root, tearoff=0)
+        self.menu_contexto.add_command(label="📄 Abrir PDF", command=self.abrir_pdf_selecionado)
+        self.menu_contexto.add_command(label="🌐 Abrir no Navegador", command=self.abrir_link_navegador)
+        self.menu_contexto.add_separator()
+        self.menu_contexto.add_command(label="🗑 Apagar Detalhes (Reset)", command=self.limpar_detalhes)
+
+        # Binds de eventos
+        self.view.tree.bind("<ButtonRelease-1>", self.clique_na_tabela)
+        self.view.tree.bind("<Button-3>", self.mostrar_menu_contexto)
         
-        self.tree.column("Título", width=400, anchor="w")
-        self.tree.column("Autor", width=200, anchor="w")
-        self.tree.column("Ação", width=120, anchor="center")
-        self.tree.column("Link", width=0, stretch=tk.NO) # TOTALMENTE OCULTA
+        # Carregamento inicial de dados
+        self.carregar_do_banco()
 
-        scrollbar = ttk.Scrollbar(frame_tabela, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set, cursor="hand2")
-
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # --- Vínculo de Eventos ---
-        self.tree.bind("<ButtonRelease-1>", self.clique_na_tabela)
-        self.tree.bind("<Double-1>", self.abrir_link)
-        
-        # No __init__ do AppPesquisa, abaixo da Treeview:
-        self.frame_detalhes = tk.LabelFrame(root, text="Detalhes e Resumo", font=("Arial", 10, "bold"))
-        # Não daremos pack() nele ainda para ele ficar "escondido"
-
-        self.txt_resumo = tk.Text(self.frame_detalhes, wrap="word", height=8, font=("Arial", 10))
-        self.txt_resumo.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Botão para fechar o painel (tornar retrátil)
-        tk.Button(self.frame_detalhes, text="Fechar Painel", command=self.ocultar_detalhes).pack(anchor="e")
-
-        database.conectar()
-
-    def ocultar_detalhes(self):
-        self.frame_detalhes.pack_forget()
-
-    def exibir_detalhes(self, texto):
-        self.frame_detalhes.pack(fill="x", side="bottom", padx=10, pady=5)
-        self.txt_resumo.delete("1.0", tk.END)
-        self.txt_resumo.insert(tk.END, texto)
-
-    def disparar_busca(self):
-        self.btn_buscar.config(state="disabled")
-        for item in self.tree.get_children(): self.tree.delete(item)
-        threading.Thread(target=self.processar_em_segundo_plano, daemon=True).start()
-
-    def processar_em_segundo_plano(self):
-        todos_os_resultados_finais = []
-        try:
-            total_urls = len(self.lista_de_urls)
-            for i, url in enumerate(self.lista_de_urls):
-                def atualizar_status_view(msg):
-                    self.root.after(0, lambda: self.lbl_status.config(
-                        text=f"[Busca {i+1}/{total_urls}] {msg}", fg="blue"))
-
-                resultados_da_url = leitor_de_paginas.realizar_busca_recursiva(url, atualizar_status_view)
-                todos_os_resultados_finais.extend(resultados_da_url)
-
-            # Salvar no SQLite
-            novos = database.salvar_resultados(todos_os_resultados_finais)
-            
-            # Atualizar interface (Passando os dados e a contagem de novos)
-            self.root.after(0, self.atualizar_tabela, todos_os_resultados_finais, novos)
-            
-        except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Erro Crítico", f"Erro: {e}"))
-            self.root.after(0, lambda: self.btn_buscar.config(state="normal"))
-
-    def atualizar_tabela(self, dados, novos_count=0):
-        """Limpa e preenche a tabela com 4 valores por linha."""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
-        for d in dados:
-            # INSERÇÃO CORRETA: Título[0], Autor[1], Texto Ação[2], Link[3]
-            self.tree.insert("", "end", values=(d["Título"], d["Autor"], "🔍 Ler Resumo", d["Link"]))
-
-        self.lbl_status.config(
-            text=f"Concluído! {len(dados)} exibidos. {novos_count} novos salvos.", 
-            fg="green"
-        )
-        self.btn_buscar.config(state="normal")
+    def validar_estado_botoes(self):
+        """Ativa os botões apenas quando um ano válido é selecionado."""
+        ano = self.view.ano_selecionado_var.get()
+        if ano in self.view.anos:
+            self.view.btn_buscar.config(state="normal")
+            self.view.btn_sucupira.config(state="normal")
+            self.view.lbl_status.config(text=f"Pronto para pesquisar o ano {ano}.", fg="green")
+        else:
+            self.view.btn_buscar.config(state="disabled")
+            self.view.btn_sucupira.config(state="disabled")
 
     def carregar_do_banco(self):
-        """Carrega do banco e reconstrói as 4 colunas necessárias."""
-        dados_salvos = database.recuperar_todos()
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
-        for d in dados_salvos:
-            # d[0]=Título, d[1]=Autor, d[2]=Link (conforme database.py)
-            # Adicionamos "🔍 Ler Resumo" no índice [2] para manter a estrutura
-            self.tree.insert("", "end", values=(d[0], d[1], "🔍 Ler Resumo", d[2]))
-            
-        self.lbl_status.config(text=f"Exibindo {len(dados_salvos)} trabalhos salvos.", fg="purple")
+        """Atualiza os dados na Treeview preservando a ordem atual."""
+        dados_salvos = recuperar_todos()
+        
+        # Se a tabela estiver vazia, faz o carregamento inicial completo
+        if not self.view.tree.get_children():
+            self._recarregar_completo(dados_salvos)
+            return
 
-    def abrir_link(self, event):
-        item_selecionado = self.tree.selection()
-        if item_selecionado:
-            valores = self.tree.item(item_selecionado, "values")
-            # Link agora está no índice [3]
-            if len(valores) >= 4:
-                link = valores[3]
-                if link and link != "N/A":
-                    webbrowser.open(link)
-
-    def clique_na_tabela(self, event):
-        region = self.tree.identify_region(event.x, event.y)
-        if region == "cell":
-            column = self.tree.identify_column(event.x)
-            item_id = self.tree.identify_row(event.y)
+        # Se já houver dados, atualiza as linhas existentes para manter a ordem
+        mapa_dados = {d['link']: d for d in dados_salvos}
+        for item_id in self.view.tree.get_children():
+            valores_atuais = self.view.tree.item(item_id, "values")
+            link_item = valores_atuais[7]
             
-            if column == "#3": # Coluna "Extrair Detalhes"
-                valores = self.tree.item(item_id, "values")
-                link = valores[3]
-                titulo = valores[0]
+            if link_item in mapa_dados:
+                d = mapa_dados[link_item]
+                classe = str(d['classificacao']).lower() if d['classificacao'] else ""
+                tag = 'juridico' if "jurídico" in classe else 'nao_juridico' if "não" in classe else 'pendente'
                 
-                # --- LÓGICA DE RECUPERAÇÃO INTELIGENTE ---
-                dados_existentes = database.buscar_trabalho_por_link(link)
-                
-                # Verificamos se o resumo (coluna de índice 8 no SELECT *) não é nulo/vazio
-                if dados_existentes and dados_existentes["resumo"]: 
-                    info_banco = (
-                        f"INSTITUIÇÃO: {dados_existentes['universidade']}\n"
-                        f"PROGRAMA: {dados_existentes['programa']}\n"
-                        f"CLASSIFICAÇÃO: {dados_existentes['classificacao']}\n"
-                        f"{'-'*50}\n"
-                        f"RESUMO (RECUPERADO DO BANCO):\n{dados_existentes['resumo']}"
-                    )
-                    self.exibir_resumo(info_banco)
-                    self.lbl_status.config(text="Dados recuperados do banco local.", fg="purple")
-                
-                else:
-                    # Se não existe no banco, aí sim usamos o Selenium
-                    self.lbl_status.config(text=f"Fazendo scrap: {titulo[:30]}...", fg="orange")
-                    threading.Thread(target=self.scrap_detalhado, args=(link,), daemon=True).start()
+                self.view.tree.item(item_id, values=(
+                    d['id'], d['titulo'], d['autor'], d['universidade'], 
+                    d['programa'], d['classificacao'], "🔍 Ler Resumo", d['link']
+                ), tags=(tag,))
 
-    def scrap_detalhado(self, url):
+    def _recarregar_completo(self, dados):
+        """Método auxiliar para preencher a tabela do zero."""
+        for d in dados:
+            classe = str(d['classificacao']).lower() if d['classificacao'] else ""
+            tag = 'juridico' if "jurídico" in classe else 'nao_juridico' if "não" in classe else 'pendente'
+            self.view.tree.insert("", "end", values=(
+                d['id'], d['titulo'], d['autor'], d['universidade'], 
+                d['programa'], d['classificacao'], "🔍 Ler Resumo", d['link']
+            ), tags=(tag,))
+
+    def disparar_busca(self):
+        """
+        Orquestra a pesquisa múltipla baseada no ano selecionado 
+        e nas palavras-chave marcadas na interface.
+        """
+        # 1. Validação do Ano de Referência
+        ano = self.view.ano_selecionado_var.get()
+        if ano not in self.view.anos:
+            messagebox.showwarning("Aviso", "Selecione um ano de referência obrigatório antes de buscar.")
+            return
+
+        # 2. Coleta dos temas marcados na interface (View)
+        termos_selecionados = [
+            termo for termo, var in self.view.vars_keywords.items() 
+            if var.get()
+        ]
+        
+        if not termos_selecionados:
+            messagebox.showwarning("Aviso", "Selecione ao menos um tema (palavra-chave) para realizar a pesquisa.")
+            return
+
+        # 3. Preparação da Interface (Bloqueio de botões e limpeza)
+        self.view.btn_buscar.config(state="disabled")
+        self.view.btn_sucupira.config(state="disabled")
+        self.view.lbl_status.config(text=f"Iniciando busca múltipla para {ano}...", fg="blue")
+        
+        # Limpa a tabela para receber os novos resultados desta rodada
+        self.view.tree.delete(*self.view.tree.get_children())
+
+        # 4. Montagem Dinâmica das URLs
+        # O loop percorre cada termo selecionado e cria uma URL específica para o BDTD
+        urls_para_processar = []
+        for termo in termos_selecionados:
+            # Aspas duplas ao redor do termo para busca exata e quote para caracteres especiais
+            termo_formatado = urllib.parse.quote(f'"{termo}"')
+            
+            url = (
+                f"https://bdtd.ibict.br/vufind/Search/Results?"
+                f"lookfor={termo_formatado}&type=AllFields&"
+                f"filter%5B%5D=publishDate%3A%22%5B{ano}+TO+{ano}%5D%22"
+            )
+            urls_para_processar.append(url)
+
+        # 5. Disparo da Thread de Processamento
+        # Passamos a lista de URLs e o ano para a tarefa de segundo plano
+        threading.Thread(
+            target=self._task_busca, 
+            args=(urls_para_processar,), 
+            daemon=True
+        ).start()
+    
+    def _task_busca(self, urls):
+        """Thread que executa a raspagem recursiva do BDTD enviando o callback de status."""
+        todos_os_resultados = []
         try:
-            # 1. Faz o scrap (Motor que você já tem)
-            res = leitor_de_paginas.ler_detalhes_trabalho(url)
+            total_urls = len(urls)
+            for i, url in enumerate(urls):
+                # Criamos a função de callback que o leitor_de_paginas vai chamar
+                def atualizar_status_view(msg):
+                    # O status agora mostra o progresso das URLs e a mensagem do scraper
+                    texto = f"[Busca {i+1}/{total_urls}] {msg}"
+                    self.root.after(0, lambda t=texto: self.view.lbl_status.config(text=t, fg="blue"))
+                
+                # ENVIANDO O ARGUMENTO QUE ESTAVA FALTANDO: callback_status
+                resultados = leitor_de_paginas.realizar_busca_recursiva(url, callback_status=atualizar_status_view)
+                todos_os_resultados.extend(resultados)
+
+            # Salva resultados básicos no SQLite
+            novos = salvar_resultados(todos_os_resultados)
             
-            # 2. Armazena no Banco de Dados
-            database.salvar_detalhes_completos(
-                url, res["resumo"], res["programa"], res["universidade"], res["classificacao"]
-            )
-
-            # 3. Formata o texto para a célula retrátil
-            texto_exibicao = (
-                f"UNIVERSIDADE: {res['universidade']}\n"
-                f"PROGRAMA: {res['programa']}\n"
-                f"CLASSIFICAÇÃO: {res['classificacao']}\n"
-                f"{'-'*50}\n"
-                f"RESUMO: {res['resumo']}"
-            )
-
-            # 4. Atualiza a interface (Painel Retrátil)
-            self.root.after(0, lambda: self.exibir_detalhes(texto_exibicao))
-            self.root.after(0, lambda: self.lbl_status.config(text="Resumo carregado e salvo.", fg="green"))
-
+            # Atualiza interface
+            self.root.after(0, self.carregar_do_banco)
+            self.root.after(0, lambda: messagebox.showinfo("Busca Concluída", f"Foram encontrados {len(todos_os_resultados)} itens ({novos} novos)."))
+        
         except Exception as e:
-            erro_msg = str(e)
-            self.root.after(0, lambda err=erro_msg: messagebox.showerror("Erro", f"Falha: {err}"))
+            self.root.after(0, lambda err=str(e): messagebox.showerror("Erro na Busca", f"Falha: {err}"))
+        finally:
+            self.root.after(0, lambda: self.view.btn_buscar.config(state="normal"))
+    
+    def clique_na_tabela(self, event):
+        region = self.view.tree.identify_region(event.x, event.y)
+        if region == "cell":
+            column = self.view.tree.identify_column(event.x)
+            item_id = self.view.tree.identify_row(event.y)
+            
+            if column == "#7":
+                valores = self.view.tree.item(item_id, "values")
+                link = valores[7]
+                dados = buscar_trabalho_por_link(link)
+                
+                if dados and dados.get("resumo"):
+                    info = f"IES: {dados['universidade']}\nPROG: {dados['programa']}\n{'-'*30}\n{dados['resumo']}"
+                    self.view.exibir_resumo(info)
+                else:
+                    self.view.lbl_status.config(text="Extraindo detalhes via Selenium...", fg="orange")
+                    threading.Thread(target=self._task_scrap_detalhado, args=(link,), daemon=True).start()
 
-    def exibir_resumo(self, texto):
-        self.frame_detalhes.pack(fill="x", padx=10, pady=5)
-        self.txt_resumo.config(state="normal") # Habilita para escrita
-        self.txt_resumo.delete("1.0", tk.END)
-        self.txt_resumo.insert(tk.END, texto)
-        self.txt_resumo.see("1.0") # Volta para o início do texto
-        self.txt_resumo.config(state="disabled") # Bloqueia edição
+    def _task_scrap_detalhado(self, url):
+        try:
+            res = leitor_de_paginas.ler_detalhes_trabalho(url)
+            salvar_detalhes_completos(url, res["resumo"], res["programa"], res["universidade"], res["classificacao"], res["link_pdf"])
+            info = f"IES: {res['universidade']}\nPDF: {res['link_pdf']}\n{'-'*30}\n{res['resumo']}"
+            self.root.after(0, lambda: self.view.exibir_resumo(info))
+            self.root.after(0, self.carregar_do_banco)
+        except Exception as e:
+            self.root.after(0, lambda err=str(e): messagebox.showerror("Erro", err))
+
+    def ordenar_coluna(self, col, reverse):
+        l = [(self.view.tree.set(k, col), k) for k in self.view.tree.get_children('')]
+        try:
+            if col == "ID": l.sort(key=lambda t: int(t[0]), reverse=reverse)
+            else: l.sort(key=lambda t: t[0].lower(), reverse=reverse)
+        except: l.sort(reverse=reverse)
+
+        for index, (val, k) in enumerate(l):
+            self.view.tree.move(k, '', index)
+        self.view.tree.heading(col, command=lambda: self.ordenar_coluna(col, not reverse))
+
+    def abrir_pdf_selecionado(self):
+        sel = self.view.tree.selection()
+        if sel:
+            link = self.view.tree.item(sel[0], "values")[7]
+            dados = buscar_trabalho_por_link(link)
+            if dados and dados.get("link_pdf") and "http" in dados["link_pdf"]:
+                webbrowser.open(dados["link_pdf"])
+
+    def abrir_link_navegador(self, event=None):
+        sel = self.view.tree.selection()
+        if sel:
+            link = self.view.tree.item(sel[0], "values")[7]
+            webbrowser.open(link)
+
+    def mostrar_menu_contexto(self, event):
+        item = self.view.tree.identify_row(event.y)
+        if item:
+            self.view.tree.selection_set(item)
+            self.menu_contexto.post(event.x_root, event.y_root)
+
+    def solicitar_busca_sucupira(self):
+        ano = self.view.combo_ano.get()
+        sigla = simpledialog.askstring("Sucupira", "Sigla da Universidade:")
+        if sigla:
+            threading.Thread(target=self._task_sucupira, args=(sigla, ano), daemon=True).start()
+
+    def _task_sucupira(self, sigla, ano):
+        id_s = leitor_sucupira.buscar_id_instituicao(sigla)
+        if id_s:
+            salvar_id_sucupira(sigla, id_s, ano)
+            self.root.after(0, lambda: messagebox.showinfo("Sucesso", f"ID {id_s} salvo para {sigla}."))
+
+    def limpar_detalhes(self):
+        """Ação disparada pelo menu de contexto para resetar os dados de um trabalho."""
+        item_selecionado = self.view.tree.selection()
+        if not item_selecionado:
+            return
+        
+        # Pega os valores da linha (ID está no índice 0)
+        valores = self.view.tree.item(item_selecionado[0], "values")
+        id_trabalho = valores[0]
+        titulo = valores[1]
+        
+        pergunta = f"Deseja apagar os detalhes extraídos de:\n'{titulo[:50]}...'?"
+        if messagebox.askyesno("Confirmar Reset", pergunta):
+            try:
+                # 1. Chama a função do arquivo database.py
+                limpar_detalhes_trabalho(id_trabalho)
+                
+                # 2. Notifica o status
+                self.view.lbl_status.config(text=f"Dados do ID {id_trabalho} resetados.", fg="blue")
+                
+                # 3. Fecha o painel de resumo se estiver aberto
+                self.view.ocultar_detalhes()
+                
+                # 4. Atualiza a tabela para voltar a cor para Branco (pendente)
+                self.carregar_do_banco()
+                
+            except Exception as e:
+                messagebox.showerror("Erro ao apagar", f"Falha no banco de dados: {e}")
+
+    def iniciar(self):
+        self.root.mainloop()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AppPesquisa(root)
-    root.mainloop()
+    inicializar_banco()
+    AppController().iniciar()
