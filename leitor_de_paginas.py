@@ -38,7 +38,65 @@ def extrair_dados_da_pagina_atual(soup):
         except: continue
     return trabalhos_detalhados
 
-def realizar_busca_recursiva(url_base, callback_status):
+
+import requests
+from bs4 import BeautifulSoup
+import time
+
+def realizar_busca_recursiva(url_inicial, config, callback_status):
+    """
+    Função agnóstica: percorre páginas baseada nos parâmetros fornecidos.
+    config: dicionário com seletores e regras do agregador.
+    """
+    todos_resultados = []
+    pagina_atual = 1
+    total_paginas = 1
+
+    while pagina_atual <= total_paginas:
+        # Monta URL: alguns sites usam 'page=2', outros 'from=21' (offset)
+        ajuste_pag = pagina_atual if config['param_pagina'] == "page" else (pagina_atual - 1) * 20
+        url_com_pagina = f"{url_inicial}&{config['param_pagina']}={ajuste_pag}"
+        
+        callback_status(f"Coletando página {pagina_atual} de {total_paginas}...")
+        
+        try:
+            response = requests.get(url_com_pagina, timeout=15)
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Na primeira página, descobre o limite de navegação
+            if pagina_atual == 1:
+                total_paginas = _extrair_limite_paginacao(soup, config)
+
+            # Extração genérica baseada nos seletores do parâmetro 'config'
+            for row in soup.select(config['seletor_itens']):
+                try:
+                    el_titulo = row.select_one(config['seletor_titulo'])
+                    todos_resultados.append({
+                        "Título": el_titulo.get_text().strip(),
+                        "Autor": row.select_one(config['seletor_autor']).get_text().strip(),
+                        "Link": config['url_base_item'] + el_titulo['href']
+                    })
+                except: continue
+
+            pagina_atual += 1
+            time.sleep(1.5) # Delay ético para evitar bloqueios
+
+        except Exception as e:
+            callback_status(f"Erro na página {pagina_atual}: {e}")
+            break
+
+    return todos_resultados
+
+def _extrair_limite_paginacao(soup, config):
+    """Extrai o número da última página usando o seletor genérico."""
+    try:
+        links = soup.select(config['seletor_paginacao'])
+        numeros = [int(s.get_text()) for s in links if s.get_text().isdigit()]
+        return max(numeros) if numeros else 1
+    except:
+        return 1
+
+def realizar_busca_recursiva_old_APAGAR_SE_A_OUTRA_FUNCIONAR(url_base, callback_status):
     """Navega por todas as páginas de uma busca específica."""
     edge_options = Options()
     edge_options.add_argument("--headless=new")
