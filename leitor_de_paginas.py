@@ -6,6 +6,81 @@ from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from trata_ies import extrair_unisinos, extrair_ufop, extrair_unb, extrair_generico_dspace
+
+def ler_detalhes_trabalho(url_detalhe):
+    edge_options = Options()
+    edge_options.add_argument("--headless=new")
+    edge_options.add_argument("--disable-gpu")
+    edge_options.add_argument("--no-sandbox")
+    edge_options.add_experimental_option('excludeSwitches', ['enable-logging'])
+    
+    driver = webdriver.Edge(options=edge_options)
+    wait = WebDriverWait(driver, 20)
+    
+    try:
+        driver.get(url_detalhe)
+        
+        # --- ESPERA INTELIGENTE MULTI-SISTEMA ---
+        try:
+            # Espera até que QUALQUER um desses elementos apareça:
+            # .simple-item-view-description (DSpace clássico/Unisinos)
+            # ds-item-page (UFOP/DSpace Angular)
+            # .dc_description_ppg (UnB)
+            wait.until(EC.presence_of_element_located((
+                By.CSS_SELECTOR, "ds-item-page, .simple-item-view-description, .dc_description_ppg, #ds-content"
+            )))
+        except:
+            # Se nenhum aparecer em 20s, espera um pouco mais por segurança
+            time.sleep(3) 
+
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+        # 1. Identificar Universidade e extrair programa
+        if "ufop.br" in url_detalhe:
+            uni = "UFOP"
+            # Pequeno fôlego extra para o Angular renderizar os textos internos
+            time.sleep(2) 
+            # Re-processa o soup para garantir que pegamos o HTML final renderizado
+            soup = BeautifulSoup(driver.page_source, 'html.parser')
+            prog = extrair_ufop(soup)
+        elif "unisinos.br" in url_detalhe or "jesuita.org.br" in url_detalhe:
+            uni = "UNISINOS"
+            prog = extrair_unisinos(soup)
+        elif "unb.br" in url_detalhe:
+            uni = "UnB"
+            prog = extrair_unb(soup)
+        else:
+            uni = "Outra"
+            prog = extrair_generico_dspace(soup)
+
+        # 2. Limpeza e Classificação
+        prog_limpo = re.sub(r'^\d+[A-Z0-9]*\s+', '', prog)
+        # Classificação baseada no PPG
+        classificacao = "Jurídico" if "direito" in prog_limpo.lower() else "Não Jurídico"
+
+        # 3. Extração do Resumo (A Unisinos usa classes 'simple-item-view-description')
+        resumo = "Resumo não disponível."
+        # Procura em meta tags primeiro (mais estável)
+        meta_resumo = soup.find('meta', attrs={'name': 'DC.description', 'xml:lang': 'pt_BR'}) or \
+                      soup.find('meta', attrs={'name': 'DCTERMS.abstract'})
+        
+        if meta_resumo:
+            resumo = meta_resumo.get('content', resumo)
+        else:
+            # Fallback visual
+            resumo_tag = soup.find('div', class_='simple-item-view-description')
+            if resumo_tag:
+                resumo = resumo_tag.get_text(strip=True).replace("Resumo:", "").strip()
+
+        return {
+            "resumo": resumo,
+            "universidade": uni,
+            "programa": prog_limpo,
+            "classificacao": classificacao
+        }
+    finally:
+        driver.quit()
 
 def extrair_numero_paginas(soup):
     """Extrai o número da última página do elemento aria-label."""
