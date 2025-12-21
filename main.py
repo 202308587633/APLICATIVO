@@ -1,222 +1,112 @@
-import webbrowser
-import database 
 import tkinter as tk
-from tkinter import ttk, messagebox
-import threading
+from interface import InterfaceGrafica
+import database
 import leitor_de_paginas
-import importlib 
+import threading
+import webbrowser
+from tkinter import messagebox
 
-class AppPesquisa:
-    def __init__(self, root):
-        importlib.reload(leitor_de_paginas)
-        self.root = root
-        self.root.title("Buscador Acadêmico RAG")
-        self.root.geometry("1000x600")
-
-        # --- Lista de URLs (Mantenha as suas aqui) ---
-        self.lista_de_urls = [
-            "https://bdtd.ibict.br/vufind/Search/Results?join=AND&bool0%5B%5D=AND&lookfor0%5B%5D=%22an%C3%A1lise+de+discurso%22&type0%5B%5D=AllFields&lookfor0%5B%5D=direito&type0%5B%5D=AllFields&illustration=-1&daterange%5B%5D=publishDate&publishDatefrom=2021&publishDateto=2021",
-            "https://bdtd.ibict.br/vufind/Search/Results?join=AND&bool0%5B%5D=AND&lookfor0%5B%5D=%22algoritmo%22&type0%5B%5D=AllFields&lookfor0%5B%5D=direito&type0%5B%5D=AllFields&illustration=-1&daterange%5B%5D=publishDate&publishDatefrom=2021&publishDateto=2021"
+class AppController:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.view = InterfaceGrafica(self.root, self)
+        
+        self.urls = [
+            "URL_1_AQUI",
+            "URL_2_AQUI"
         ]
-
-        # --- Título ---
-        tk.Label(root, text="Buscador BDTD - Doutorado", font=("Arial", 14, "bold")).pack(pady=10)
-
-        # --- Container para Botões ---
-        frame_botoes = tk.Frame(root)
-        frame_botoes.pack(pady=5)
-
-        self.btn_buscar = tk.Button(frame_botoes, text="Iniciar Pesquisa Múltipla", command=self.disparar_busca, 
-                                   bg="#2ecc71", fg="white", font=("Arial", 10, "bold"), padx=20)
-        self.btn_buscar.pack(side="left", padx=5)
-
-        self.btn_carregar = tk.Button(frame_botoes, text="Carregar Dados Salvos", command=self.carregar_do_banco,
-                                     bg="#3498db", fg="white", font=("Arial", 10, "bold"), padx=20)
-        self.btn_carregar.pack(side="left", padx=5)
-
-        # --- Status ---
-        self.lbl_status = tk.Label(root, text="Pronto para iniciar.", font=("Arial", 9, "italic"), fg="gray")
-        self.lbl_status.pack(pady=5)
-
-        # --- Frame da Tabela ---
-        frame_tabela = tk.Frame(root)
-        frame_tabela.pack(fill="both", expand=True, padx=10, pady=10)
-
-        # Configuração da Treeview (4 COLUNAS DEFINIDAS)
-        self.tree = ttk.Treeview(frame_tabela, columns=("Título", "Autor", "Ação", "Link"), show='headings')
-        
-        self.tree.heading("Título", text="Título")
-        self.tree.heading("Autor", text="Autor")
-        self.tree.heading("Ação", text="Extrair Detalhes")
-        self.tree.heading("Link", text="Link") # Heading necessário para evitar erros internos
-        
-        self.tree.column("Título", width=400, anchor="w")
-        self.tree.column("Autor", width=200, anchor="w")
-        self.tree.column("Ação", width=120, anchor="center")
-        self.tree.column("Link", width=0, stretch=tk.NO) # TOTALMENTE OCULTA
-
-        scrollbar = ttk.Scrollbar(frame_tabela, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set, cursor="hand2")
-
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-        # --- Vínculo de Eventos ---
-        self.tree.bind("<ButtonRelease-1>", self.clique_na_tabela)
-        self.tree.bind("<Double-1>", self.abrir_link)
-        
-        # No __init__ do AppPesquisa, abaixo da Treeview:
-        self.frame_detalhes = tk.LabelFrame(root, text="Detalhes e Resumo", font=("Arial", 10, "bold"))
-        # Não daremos pack() nele ainda para ele ficar "escondido"
-
-        self.txt_resumo = tk.Text(self.frame_detalhes, wrap="word", height=8, font=("Arial", 10))
-        self.txt_resumo.pack(fill="both", expand=True, padx=5, pady=5)
-        
-        # Botão para fechar o painel (tornar retrátil)
-        tk.Button(self.frame_detalhes, text="Fechar Painel", command=self.ocultar_detalhes).pack(anchor="e")
-
-        database.conectar()
-
-    def ocultar_detalhes(self):
-        self.frame_detalhes.pack_forget()
-
-    def exibir_detalhes(self, texto):
-        self.frame_detalhes.pack(fill="x", side="bottom", padx=10, pady=5)
-        self.txt_resumo.delete("1.0", tk.END)
-        self.txt_resumo.insert(tk.END, texto)
+        database.inicializar_banco()
+        self.carregar_do_banco()
 
     def disparar_busca(self):
-        self.btn_buscar.config(state="disabled")
-        for item in self.tree.get_children(): self.tree.delete(item)
-        threading.Thread(target=self.processar_em_segundo_plano, daemon=True).start()
+        self.view.btn_buscar.config(state="disabled")
+        self.view.lbl_status.config(text="Iniciando busca múltipla...", fg="blue")
+        threading.Thread(target=self._task_busca_BDTD, daemon=True).start()
 
-    def processar_em_segundo_plano(self):
-        todos_os_resultados_finais = []
+    def _task_busca_BDTD(self):
         try:
-            total_urls = len(self.lista_de_urls)
-            for i, url in enumerate(self.lista_de_urls):
-                def atualizar_status_view(msg):
-                    self.root.after(0, lambda: self.lbl_status.config(
-                        text=f"[Busca {i+1}/{total_urls}] {msg}", fg="blue"))
+            resultados_finais = []
+            for i, url in enumerate(self.urls):
+                msg = f"Processando busca {i+1}/{len(self.urls)}..."
+                self.root.after(0, lambda m=msg: self.view.lbl_status.config(text=m))
+                
+                res = leitor_de_paginas.realizar_busca_recursiva(url, lambda m: None)
+                resultados_finais.extend(res)
 
-                resultados_da_url = leitor_de_paginas.realizar_busca_recursiva(url, atualizar_status_view)
-                todos_os_resultados_finais.extend(resultados_da_url)
-
-            # Salvar no SQLite
-            novos = database.salvar_resultados(todos_os_resultados_finais)
-            
-            # Atualizar interface (Passando os dados e a contagem de novos)
-            self.root.after(0, self.atualizar_tabela, todos_os_resultados_finais, novos)
-            
+            novos = database.salvar_resultados(resultados_finais)
+            self.root.after(0, self.carregar_do_banco)
+            self.root.after(0, lambda: messagebox.showinfo("Sucesso", f"Busca finalizada! {novos} novos itens."))
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Erro Crítico", f"Erro: {e}"))
-            self.root.after(0, lambda: self.btn_buscar.config(state="normal"))
-
-    def atualizar_tabela(self, dados, novos_count=0):
-        """Limpa e preenche a tabela com 4 valores por linha."""
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
-        for d in dados:
-            # INSERÇÃO CORRETA: Título[0], Autor[1], Texto Ação[2], Link[3]
-            self.tree.insert("", "end", values=(d["Título"], d["Autor"], "🔍 Ler Resumo", d["Link"]))
-
-        self.lbl_status.config(
-            text=f"Concluído! {len(dados)} exibidos. {novos_count} novos salvos.", 
-            fg="green"
-        )
-        self.btn_buscar.config(state="normal")
+            self.root.after(0, lambda: messagebox.showerror("Erro", str(e)))
+        finally:
+            self.root.after(0, lambda: self.view.btn_buscar.config(state="normal"))
 
     def carregar_do_banco(self):
-        """Carrega do banco e reconstrói as 4 colunas necessárias."""
-        dados_salvos = database.recuperar_todos()
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-            
-        for d in dados_salvos:
-            # d[0]=Título, d[1]=Autor, d[2]=Link (conforme database.py)
-            # Adicionamos "🔍 Ler Resumo" no índice [2] para manter a estrutura
-            self.tree.insert("", "end", values=(d[0], d[1], "🔍 Ler Resumo", d[2]))
-            
-        self.lbl_status.config(text=f"Exibindo {len(dados_salvos)} trabalhos salvos.", fg="purple")
-
-    def abrir_link(self, event):
-        item_selecionado = self.tree.selection()
-        if item_selecionado:
-            valores = self.tree.item(item_selecionado, "values")
-            # Link agora está no índice [3]
-            if len(valores) >= 4:
-                link = valores[3]
-                if link and link != "N/A":
-                    webbrowser.open(link)
+        dados = database.recuperar_todos()
+        self.view.tree.delete(*self.view.tree.get_children())
+        for d in dados:
+            # d agora é um objeto Row ou dicionário dependendo do seu database.py
+            tag = 'juridico' if "Jurídico" in str(d['classificacao']) else 'nao_juridico'
+            self.view.tree.insert("", "end", values=(
+                d['id'], d['titulo'], d['autor'], d['universidade'], 
+                d['programa'], d['classificacao'], "🔍 Ler Resumo", d['link']
+            ), tags=(tag,))
 
     def clique_na_tabela(self, event):
-        region = self.tree.identify_region(event.x, event.y)
+        region = self.view.tree.identify_region(event.x, event.y)
         if region == "cell":
-            column = self.tree.identify_column(event.x)
-            item_id = self.tree.identify_row(event.y)
-            
-            if column == "#3": # Coluna "Extrair Detalhes"
-                valores = self.tree.item(item_id, "values")
-                link = valores[3]
-                titulo = valores[0]
-                
-                # --- LÓGICA DE RECUPERAÇÃO INTELIGENTE ---
-                dados_existentes = database.buscar_trabalho_por_link(link)
-                
-                # Verificamos se o resumo (coluna de índice 8 no SELECT *) não é nulo/vazio
-                if dados_existentes and dados_existentes["resumo"]: 
-                    info_banco = (
-                        f"INSTITUIÇÃO: {dados_existentes['universidade']}\n"
-                        f"PROGRAMA: {dados_existentes['programa']}\n"
-                        f"CLASSIFICAÇÃO: {dados_existentes['classificacao']}\n"
-                        f"{'-'*50}\n"
-                        f"RESUMO (RECUPERADO DO BANCO):\n{dados_existentes['resumo']}"
-                    )
-                    self.exibir_resumo(info_banco)
-                    self.lbl_status.config(text="Dados recuperados do banco local.", fg="purple")
-                
-                else:
-                    # Se não existe no banco, aí sim usamos o Selenium
-                    self.lbl_status.config(text=f"Fazendo scrap: {titulo[:30]}...", fg="orange")
-                    threading.Thread(target=self.scrap_detalhado, args=(link,), daemon=True).start()
+            col = self.view.tree.identify_column(event.x)
+            item_id = self.view.tree.identify_row(event.y)
+            if col == "#7": # Coluna Ação
+                valores = self.view.tree.item(item_id, "values")
+                link = valores[7]
+                self._processar_detalhes(link)
 
-    def scrap_detalhado(self, url):
+    def _processar_detalhes(self, link):
+        dados = database.buscar_trabalho_por_link(link)
+        if dados and dados['resumo']:
+            info = f"IES: {dados['universidade']}\nResumo: {dados['resumo']}"
+            self.view.exibir_resumo(info)
+        else:
+            self.view.lbl_status.config(text="Extraindo detalhes via Selenium...", fg="orange")
+            threading.Thread(target=self._task_scrap_detalhado, args=(link,), daemon=True).start()
+
+    def _task_scrap_detalhado(self, link):
         try:
-            # 1. Faz o scrap (Motor que você já tem)
-            res = leitor_de_paginas.ler_detalhes_trabalho(url)
-            
-            # 2. Armazena no Banco de Dados
-            database.salvar_detalhes_completos(
-                url, res["resumo"], res["programa"], res["universidade"], res["classificacao"]
-            )
-
-            # 3. Formata o texto para a célula retrátil
-            texto_exibicao = (
-                f"UNIVERSIDADE: {res['universidade']}\n"
-                f"PROGRAMA: {res['programa']}\n"
-                f"CLASSIFICAÇÃO: {res['classificacao']}\n"
-                f"{'-'*50}\n"
-                f"RESUMO: {res['resumo']}"
-            )
-
-            # 4. Atualiza a interface (Painel Retrátil)
-            self.root.after(0, lambda: self.exibir_detalhes(texto_exibicao))
-            self.root.after(0, lambda: self.lbl_status.config(text="Resumo carregado e salvo.", fg="green"))
-
+            res = leitor_de_paginas.ler_detalhes_trabalho(link)
+            database.salvar_detalhes_completos(link, res['resumo'], res['programa'], res['universidade'], res['classificacao'])
+            self.root.after(0, self.carregar_do_banco)
+            self.root.after(0, lambda: self.view.exibir_resumo(res['resumo']))
         except Exception as e:
-            erro_msg = str(e)
-            self.root.after(0, lambda err=erro_msg: messagebox.showerror("Erro", f"Falha: {err}"))
+            self.root.after(0, lambda: messagebox.showerror("Erro Scrap", str(e)))
 
-    def exibir_resumo(self, texto):
-        self.frame_detalhes.pack(fill="x", padx=10, pady=5)
-        self.txt_resumo.config(state="normal") # Habilita para escrita
-        self.txt_resumo.delete("1.0", tk.END)
-        self.txt_resumo.insert(tk.END, texto)
-        self.txt_resumo.see("1.0") # Volta para o início do texto
-        self.txt_resumo.config(state="disabled") # Bloqueia edição
+    def abrir_link(self, event):
+        item = self.view.tree.selection()
+        if item:
+            link = self.view.tree.item(item, "values")[7]
+            webbrowser.open(link)
+
+    def ordenar_coluna(self, col, reverse):
+        """Ordena a tabela quando o cabeçalho é clicado."""
+        # Obtém todos os itens da tabela (ID do item e os valores)
+        l = [(self.view.tree.set(k, col), k) for k in self.view.tree.get_children('')]
+
+        # Tenta converter para número se a coluna for ID, para evitar erro de '10' vir antes de '2'
+        try:
+            l.sort(key=lambda t: float(t[0]) if t[0].isdigit() else t[0], reverse=reverse)
+        except ValueError:
+            l.sort(reverse=reverse)
+
+        # Rearranja os itens na interface na nova ordem
+        for index, (val, k) in enumerate(l):
+            self.view.tree.move(k, '', index)
+
+        # Inverte a ordem para o próximo clique (Toggle)
+        self.view.tree.heading(col, command=lambda: self.ordenar_coluna(col, not reverse))
+
+    def iniciar(self):
+        self.root.mainloop()
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AppPesquisa(root)
-    root.mainloop()
+    app = AppController()
+    app.iniciar()

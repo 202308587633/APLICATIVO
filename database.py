@@ -1,85 +1,108 @@
 import sqlite3
+from contextlib import contextmanager
 
-def conectar():
-    conn = sqlite3.connect("trabalhos_academicos.db")
+DB_NAME = "trabalhos_academicos.db"
+
+@contextmanager
+def abrir_conexao():
+    """Gerenciador de contexto para garantir que a conexão sempre feche."""
+    conn = sqlite3.connect(DB_NAME)
     conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Criamos a tabela com a estrutura completa
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS trabalhos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            titulo TEXT,
-            autor TEXT,
-            link TEXT UNIQUE,
-            universidade TEXT,
-            programa TEXT,
-            classificacao TEXT,
-            resumo TEXT,
-            data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Tenta adicionar as colunas uma por uma, caso a tabela já exista
-    colunas_novas = ["universidade", "programa", "classificacao", "resumo"]
-    for coluna in colunas_novas:
-        try:
-            cursor.execute(f"ALTER TABLE trabalhos ADD COLUMN {coluna} TEXT")
-        except sqlite3.OperationalError:
-            # Se cair aqui, é porque a coluna já existe, então ignoramos o erro
-            pass
-            
-    conn.commit()
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
-def salvar_detalhes_completos(link, resumo, programa, uni, classe):
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE trabalhos 
-        SET resumo = ?, programa = ?, universidade = ?, classificacao = ? 
-        WHERE link = ?
-    """, (resumo, programa, uni, classe, link))
-    conn.commit()
-    conn.close()
+def inicializar_banco():
+    """Cria a estrutura inicial e gerencia migrações de coluna."""
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        
+        # 1. Criar tabela base
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS trabalhos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                titulo TEXT,
+                autor TEXT,
+                link TEXT UNIQUE,
+                universidade TEXT,
+                programa TEXT,
+                classificacao TEXT,
+                resumo TEXT,
+                link_pdf TEXT,
+                data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # 2. Sistema de Migração Simples (Verifica se colunas existem)
+        colunas_necessarias = [
+            ("universidade", "TEXT"), 
+            ("programa", "TEXT"), 
+            ("classificacao", "TEXT"), 
+            ("resumo", "TEXT"),
+            ("link_pdf", "TEXT")
+        ]
+        
+        # Obtém colunas atuais para evitar erros de OperationalError
+        cursor.execute("PRAGMA table_info(trabalhos)")
+        colunas_existentes = [col[1] for col in cursor.fetchall()]
+        
+        for nome_col, tipo_col in colunas_necessarias:
+            if nome_col not in colunas_existentes:
+                cursor.execute(f"ALTER TABLE trabalhos ADD COLUMN {nome_col} {tipo_col}")
+        
+        conn.commit()
 
 def salvar_resultados(lista_trabalhos):
-    """Recebe a lista de dicionários e salva no banco de dados."""
-    conn = conectar()
-    cursor = conn.cursor()
-    
+    """Insere novos trabalhos usando transação única para performance."""
     count_novos = 0
-    for t in lista_trabalhos:
-        try:
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        for t in lista_trabalhos:
             cursor.execute("""
                 INSERT OR IGNORE INTO trabalhos (titulo, autor, link)
                 VALUES (?, ?, ?)
-            """, (t['Título'], t['Autor'], t['Link']))
+            """, (t.get('Título'), t.get('Autor'), t.get('Link')))
             
             if cursor.rowcount > 0:
                 count_novos += 1
-        except sqlite3.Error as e:
-            print(f"Erro ao inserir: {e}")
-            
-    conn.commit()
-    conn.close()
+        conn.commit()
     return count_novos
 
+def salvar_detalhes_completos(link, resumo, programa, uni, classe, link_pdf=None):
+    """Atualiza um registro existente com os dados do scrap detalhado."""
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE trabalhos 
+            SET resumo = ?, programa = ?, universidade = ?, classificacao = ?, link_pdf = ?
+            WHERE link = ?
+        """, (resumo, programa, uni, classe, link_pdf, link))
+        conn.commit()
+
 def buscar_trabalho_por_link(link):
-    """Busca todos os dados de um trabalho específico no banco."""
-    conn = conectar()
-    cursor = conn.cursor()
-    # Selecionamos todas as colunas para o link informado
-    cursor.execute("SELECT * FROM trabalhos WHERE link = ?", (link,))
-    resultado = cursor.fetchone()
-    conn.close()
-    return resultado
+    """Retorna um dicionário com os dados do trabalho ou None."""
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trabalhos WHERE link = ?", (link,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
 
 def recuperar_todos():
-    """Retorna todos os trabalhos salvos no banco."""
-    conn = conectar()
-    cursor = conn.cursor()
-    cursor.execute("SELECT titulo, autor, link FROM trabalhos ORDER BY data_coleta DESC")
-    dados = cursor.fetchall()
-    conn.close()
-    return dados
+    """Retorna todos os registros ordenados pelo ID (ordem de descoberta)."""
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trabalhos ORDER BY id ASC")
+        return [dict(row) for row in cursor.fetchall()]
+
+def limpar_detalhes_trabalho(id_trabalho):
+    """Reseta os detalhes de um trabalho para permitir novo scrap."""
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE trabalhos 
+            SET resumo = NULL, programa = NULL, universidade = NULL, 
+                classificacao = NULL, link_pdf = NULL 
+            WHERE id = ?
+        """, (id_trabalho,))
+        conn.commit()
