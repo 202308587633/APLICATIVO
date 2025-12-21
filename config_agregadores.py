@@ -5,7 +5,7 @@ CONFIG_AGREGADORES = {
         "seletor_itens": ".result",
         "seletor_paginacao": ".pagination li a",
         "seletor_titulo": ".title",
-        "seletor_autor": ".author",
+        "seletor_autor": ".author a",
         "url_base_item": "https://bdtd.ibict.br"
     },
     "SciELO Brasil": {

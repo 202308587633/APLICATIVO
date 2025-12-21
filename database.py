@@ -17,40 +17,24 @@ def inicializar_banco():
     """Cria a estrutura inicial e gerencia migrações de coluna."""
     with abrir_conexao() as conn:
         cursor = conn.cursor()
-        
-        # 1. Criar tabela base
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS trabalhos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 titulo TEXT,
                 autor TEXT,
-                link TEXT UNIQUE,
+                link TEXT,
                 universidade TEXT,
                 programa TEXT,
                 classificacao TEXT,
                 resumo TEXT,
                 link_pdf TEXT,
-                data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # 2. Sistema de Migração Simples (Verifica se colunas existem)
-        colunas_necessarias = [
-            ("universidade", "TEXT"), 
-            ("programa", "TEXT"), 
-            ("classificacao", "TEXT"), 
-            ("resumo", "TEXT"),
-            ("link_pdf", "TEXT")
-        ]
-        
-        # Obtém colunas atuais para evitar erros de OperationalError
-        cursor.execute("PRAGMA table_info(trabalhos)")
-        colunas_existentes = [col[1] for col in cursor.fetchall()]
-        
-        for nome_col, tipo_col in colunas_necessarias:
-            if nome_col not in colunas_existentes:
-                cursor.execute(f"ALTER TABLE trabalhos ADD COLUMN {nome_col} {tipo_col}")
-        
+                ano TEXT,
+                agregador TEXT,
+                termo TEXT,
+                data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(link, termo)
+                )
+            """)
         conn.commit()
 
 def salvar_resultados(lista_trabalhos):
@@ -60,9 +44,9 @@ def salvar_resultados(lista_trabalhos):
         cursor = conn.cursor()
         for t in lista_trabalhos:
             cursor.execute("""
-                INSERT OR IGNORE INTO trabalhos (titulo, autor, link)
-                VALUES (?, ?, ?)
-            """, (t.get('Título'), t.get('Autor'), t.get('Link')))
+                INSERT OR IGNORE INTO trabalhos (titulo, autor, link, ano, agregador, termo)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (t.get('titulo'), t.get('autor'), t.get('link'), t.get('ano'), t.get('agregador'), t.get('termo')))
             
             if cursor.rowcount > 0:
                 count_novos += 1

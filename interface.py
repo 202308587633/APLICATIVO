@@ -155,10 +155,10 @@ class InterfaceGrafica:
         frame = tk.Frame(self.root)
         frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.colunas = ("ID", "Título", "Autor", "IES", "Programa", "Classe", "Ação", "Link")
+        self.colunas = ("ID", "Título", "Autor", "Ano", "Termo", "Agregador", "Ação", "Link")
         self.tree = ttk.Treeview(frame, columns=self.colunas, show='headings')
-        
-        larguras = {"ID": 40, "Título": 300, "Autor": 150, "IES": 100, "Programa": 150, "Classe": 100, "Ação": 120, "Link": 0}
+
+        larguras = {"ID": 40, "Título": 300, "Autor": 150, "Ano": 60, "Termo": 120, "Agregador": 120, "Ação": 120, "Link": 0,"Ano": 60, "Termo": 100, "Agregador": 100}
         for col in self.colunas:
             self.tree.heading(col, text=col, command=lambda c=col: self.controller.ordenar_coluna(c, False))
             self.tree.column(col, width=larguras.get(col, 100), anchor="w" if col=="Título" else "center")
@@ -170,8 +170,31 @@ class InterfaceGrafica:
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
+        # --- ADICIONE ESTAS LINHAS PARA O BOTÃO DIREITO ---
+        self.menu_contexto = tk.Menu(self.root, tearoff=0)
+        self.menu_contexto.add_command(label="🌐 Abrir no Navegador", 
+                                       command=self.controller.abrir_link_contexto)
+        self.menu_contexto.add_command(label="🔍 Ver Detalhes", 
+                                       command=self.controller.extrair_detalhes_contexto)        
+        self.menu_contexto.add_separator()
+        self.menu_contexto.add_command(label="🗑️ Apagar Detalhes", 
+                                       command=self.controller.limpar_detalhes_contexto)
+
+
+        # Vincula o botão direito (Button-3 no Windows/Linux)
+        self.tree.bind("<Button-3>", self._exibir_menu_contexto)
+
         self.tree.bind("<ButtonRelease-1>", self.controller.clique_na_tabela)
         self.tree.bind("<Double-1>", self.controller.abrir_link)
+         
+    def _exibir_menu_contexto(self, event):
+        """Identifica a linha clicada e exibe o menu."""
+        item_clicado = self.tree.identify_row(event.y)
+        if item_clicado:
+            # Seleciona automaticamente a linha onde o usuário clicou com o direito
+            self.tree.selection_set(item_clicado)
+            # Exibe o menu na posição do mouse
+            self.menu_contexto.post(event.x_root, event.y_root)
 
     def _criar_painel_detalhes(self):
         self.frame_detalhes = tk.LabelFrame(self.root, text="Detalhes e Resumo", font=("Arial", 10, "bold"))
@@ -208,6 +231,13 @@ class InterfaceGrafica:
         self.txt_resumo.delete("1.0", tk.END)
         self.txt_resumo.insert(tk.END, texto)
         self.txt_resumo.config(state="disabled")
+
+    def _exibir_menu_contexto(self, event):
+        """Identifica a linha sob o cursor e exibe o menu."""
+        item_id = self.tree.identify_row(event.y)
+        if item_id:
+            self.tree.selection_set(item_id) # Seleciona a linha automaticamente
+            self.menu_contexto.post(event.x_root, event.y_root)
 
     def ocultar_detalhes(self):
         self.frame_detalhes.pack_forget()

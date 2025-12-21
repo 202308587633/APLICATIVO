@@ -1,11 +1,12 @@
-import re
-import time
 from bs4 import BeautifulSoup
 from selenium import webdriver
+import re
+import requests
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import time
 
 def extrair_numero_paginas(soup):
     """Extrai o número da última página do elemento aria-label."""
@@ -38,16 +39,7 @@ def extrair_dados_da_pagina_atual(soup):
         except: continue
     return trabalhos_detalhados
 
-
-import requests
-from bs4 import BeautifulSoup
-import time
-
-def realizar_busca_recursiva(url_inicial, config, callback_status):
-    """
-    Função agnóstica: percorre páginas baseada nos parâmetros fornecidos.
-    config: dicionário com seletores e regras do agregador.
-    """
+def realizar_busca_recursiva(url_inicial, config, meta_dados, callback_status):   
     todos_resultados = []
     pagina_atual = 1
     total_paginas = 1
@@ -60,26 +52,20 @@ def realizar_busca_recursiva(url_inicial, config, callback_status):
         callback_status(f"Coletando página {pagina_atual} de {total_paginas}...")
         
         try:
-            response = requests.get(url_com_pagina, timeout=15)
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            response = requests.get(url_com_pagina, headers=headers, timeout=15)
             soup = BeautifulSoup(response.text, 'html.parser')
 
             # Na primeira página, descobre o limite de navegação
             if pagina_atual == 1:
                 total_paginas = _extrair_limite_paginacao(soup, config)
 
-            # Extração genérica baseada nos seletores do parâmetro 'config'
-            for row in soup.select(config['seletor_itens']):
-                try:
-                    el_titulo = row.select_one(config['seletor_titulo'])
-                    todos_resultados.append({
-                        "Título": el_titulo.get_text().strip(),
-                        "Autor": row.select_one(config['seletor_autor']).get_text().strip(),
-                        "Link": config['url_base_item'] + el_titulo['href']
-                    })
-                except: continue
+            # Chama a extração de dados da vitrine, que lida com os links específicos
+            itens_pagina = _extrair_dados_vitrine(soup, config, meta_dados)
+            todos_resultados.extend(itens_pagina)
 
             pagina_atual += 1
-            time.sleep(1.5) # Delay ético para evitar bloqueios
+            time.sleep(1.5) 
 
         except Exception as e:
             callback_status(f"Erro na página {pagina_atual}: {e}")
@@ -96,115 +82,87 @@ def _extrair_limite_paginacao(soup, config):
     except:
         return 1
 
-def realizar_busca_recursiva_old_APAGAR_SE_A_OUTRA_FUNCIONAR(url_base, callback_status):
-    """Navega por todas as páginas de uma busca específica."""
-    edge_options = Options()
-    edge_options.add_argument("--headless=new")
-    edge_options.add_argument("--disable-gpu")
-    edge_options.add_argument("--log-level=3")
-    edge_options.add_experimental_option('excludeSwitches', ['enable-logging'])
-    
-    driver = webdriver.Edge(options=edge_options)
-    todos_os_trabalhos_da_url = []
-    
-    try:
-        # 1. Acessa a primeira página para descobrir o total
-        driver.get(url_base)
-        WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "result-body")))
-        
-        soup_inicial = BeautifulSoup(driver.page_source, 'html.parser')
-        total_paginas = extrair_numero_paginas(soup_inicial)
-        
-        # 2. Loop de paginação
-        for p in range(1, total_paginas + 1):
-            callback_status(f"Lendo página {p} de {total_paginas}...")
+def _extrair_dados_vitrine(soup, config, meta_dados):
+    resultados = []
+    for item in soup.select(config['seletor_itens']):
+        try:
+            o_titulo = item.select_one(config['seletor_titulo'])
+            o_autor = item.select_one(config['seletor_autor'])
             
-            # Se não for a primeira página, navegamos para a próxima
-            if p > 1:
-                # Ajusta a URL para a página correspondente
-                if "page=" in url_base:
-                    url_paginada = re.sub(r'page=\d+', f'page={p}', url_base)
-                else:
-                    url_paginada = f"{url_base}&page={p}"
-                
-                driver.get(url_paginada)
-                WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CLASS_NAME, "result-body")))
-                soup_atual = BeautifulSoup(driver.page_source, 'html.parser')
-            else:
-                soup_atual = soup_inicial
+            if not o_titulo or not o_autor:
+                continue
 
-            # Extrai e acumula
-            dados = extrair_dados_da_pagina_atual(soup_atual)
-            todos_os_trabalhos_da_url.extend(dados)
+            # 1. Tratamento agnóstico do link
+            href = o_titulo['href']
+            # Usa a base apenas se o link for relativo
+            link_final = href if href.startswith('http') else config['url_base_item'] + href
+
+            # 2. Limpeza profunda do autor
+            autor_raw = o_autor.get_text().strip()
+            # Remove prefixos e limpa espaços/quebras de página
+            autor_limpo = re.sub(r'^(Por|Autor|Autores)[:\s]*', '', autor_raw, flags=re.IGNORECASE)
+            autor_limpo = " ".join(autor_limpo.split())
             
-        return todos_os_trabalhos_da_url
-    finally:
-        driver.quit()
+            # 3. Montagem do objeto de dados
+            trabalho = {
+                'titulo': o_titulo.get_text().strip(),
+                'autor': autor_limpo,
+                'link': link_final, # <-- USAR A VARIÁVEL TRATADA AQUI
+                'ano': meta_dados['ano'],
+                'termo': meta_dados['termo'],
+                'agregador': meta_dados['agregador']
+            }
+            resultados.append(trabalho)
+        except Exception:
+            continue
+    return resultados
 
 def ler_detalhes_trabalho(url_detalhe):
     edge_options = Options()
-    edge_options.add_argument("--headless=new")
+    #edge_options.add_argument("--headless=new")
     driver = webdriver.Edge(options=edge_options)
 
     try:
         driver.get(url_detalhe)
         time.sleep(3)
         soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-        # 1. Identificar Universidade
-        universidade = "UFPR" if "ufpr.br" in url_detalhe else "Outra/IBICT"
+        uni_tag = soup.find(['th', 'td'], string=re.compile("Instituição de defesa|Instituição", re.I))
+        universidade = uni_tag.find_next('td').get_text(strip=True) if uni_tag else "Não identificada"
        
-        # 2. Extrair o Programa (Estratégia específica para UFPR vs Geral)
-        programa_encontrado = "Não Identificado"
-        
-        if universidade == "UFPR":
-            # Busca a lista de breadcrumb que você informou
-            breadcrumb = soup.find('ul', class_='breadcrumb')
-            if breadcrumb:
-                # Pegamos todos os itens da lista
-                itens = breadcrumb.find_all('li')
-                # No DSpace da UFPR, o programa geralmente é o 3º item (índice 2)
-                # ou o antepenúltimo antes de "Ver item"
-                if len(itens) >= 3:
-                    # Tentamos o índice 2, mas validamos se não é um dos termos genéricos
-                    texto_candidato = itens[2].get_text(strip=True)
-                    if "Página inicial" not in texto_candidato and "BIBLIOTECA" not in texto_candidato:
-                        programa_encontrado = texto_candidato
-                    elif len(itens) >= 4:
-                        programa_encontrado = itens[3].get_text(strip=True)
-        
-        # Se não for UFPR ou se a busca anterior falhou, usa a busca genérica por rótulos
-        if programa_encontrado == "Não Identificado":
-            rotulos_alvo = ["Programa", "Unidade", "Departamento", "Curso", "Publisher"]
-            for rotulo in rotulos_alvo:
-                celula_rotulo = soup.find(['th', 'td', 'dt'], string=re.compile(rotulo, re.I))
-                if celula_rotulo:
-                    valor = celula_rotulo.find_next(['td', 'dd'])
-                    if valor:
-                        programa_encontrado = valor.get_text(strip=True)
-                        break
+        # 2. Extrair Programa de Pós-Graduação
+        prog_tag = soup.find(['th', 'td'], string=re.compile("Programa de Pós-Graduação|Programa", re.I))
+        programa_raw = prog_tag.find_next('td').get_text(strip=True) if prog_tag else "Não identificado"
+        programa_limpo = re.sub(r'^\d+[A-Z0-9]*\s+', '', programa_raw) # Limpa códigos CAPES
 
-        # 3. Classificação Jurídica
-        # Removemos códigos numéricos que às vezes aparecem no início (ex: 40001016071P8)
-        # para a classificação não se confundir
-        nome_limpo = re.sub(r'^\d+[A-Z0-9]*\s+', '', programa_encontrado)
-        
-        if "direito" in nome_limpo.lower():
-            classificacao = "Jurídico"
+        # 3. Extrair Link do PDF
+        # Procura por links que terminam em .pdf ou que contenham 'bitstream' (padrão de repositórios)
+        pdf_tag = soup.find('a', href=re.compile(r'\.pdf$|bitstream|download', re.I))
+        link_pdf = pdf_tag['href'] if pdf_tag else "N/A"
+
+        if link_pdf != "N/A" and not link_pdf.startswith('http'):
+            # Ajuste de URL relativa se necessário (baseado na URL atual)
+            from urllib.parse import urljoin
+            link_pdf = urljoin(url_detalhe, link_pdf)
+
+        # 4. Classificação Jurídica
+        classificacao = "Jurídico" if "direito" in programa_limpo.lower() else "Não Jurídico"
+
+        # 5. Extrair Resumo
+        # Tenta várias tags comuns antes de desistir
+        resumo_tag = soup.find(['th', 'td'], string=re.compile("Resumo", re.I))
+
+        if resumo_tag:
+            resumo = resumo_tag.find_next('td').get_text(strip=True)
         else:
-            classificacao = "Não Jurídico"
-
-        # 4. Extrair Resumo
-        resumo_tag = soup.find('div', class_='abstract') or \
-                     soup.find('div', class_='simple-item-view-description') or \
-                     soup.find('div', class_='item-view-field-value')
-        resumo = resumo_tag.get_text(strip=True) if resumo_tag else "Resumo não disponível."
+            resumo_tag = soup.find('div', class_='abstract') or soup.find('div', id='abstract')
+            resumo = resumo_tag.get_text(strip=True) if resumo_tag else "Resumo não disponível."
 
         return {
             "resumo": resumo,
             "universidade": universidade,
-            "programa": nome_limpo, # Retornamos o nome sem o código Capes
-            "classificacao": classificacao
+            "programa": programa_limpo,
+            "classificacao": classificacao,
+            "link_pdf": link_pdf
         }
     finally:
-        driver.quit()
+        driver.quit()        

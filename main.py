@@ -7,7 +7,7 @@ import webbrowser
 from tkinter import messagebox
 import tkinter as tk
 import urllib.parse
-
+from url_factory import gerar_url_por_fonte 
 class AppController:
     def __init__(self):
         self.root = tk.Tk()
@@ -30,67 +30,44 @@ class AppController:
             messagebox.showwarning("Aviso", "Preencha todos os filtros antes de buscar.")
             return
 
-        url = self._gerar_url_por_fonte(fonte, ano, termo_inc, termos_exc)
+        url = gerar_url_por_fonte(fonte, ano, termo_inc, termos_exc, self.view.fontes_disponiveis)
 
-        # Atualiza UI para estado de carregamento
         self.view.btn_buscar.config(state="disabled")
         self.view.lbl_status.config(text=f"Pesquisando em {fonte}...", fg="blue")
-        
-        # Inicia a thread de busca
         threading.Thread(target=self._executar_tarefa_busca, args=(url,), daemon=True).start()
-
-    def _gerar_url_por_fonte(self, fonte, ano, inc, exc):
-        """Fábrica de URLs para diferentes bases acadêmicas (Sintaxe específica)."""
-        # Montagem da query: "Inclusao" -"Exclusao1" -"Exclusao2"
-        query = f'"{inc}"'
-        if exc:
-            query += " " + " ".join([f'-"{t}"' for t in exc])
-        
-        query_encoded = urllib.parse.quote(query)
-
-        # Seleção da URL baseada na fonte
-        if "BDTD" in fonte:
-            return (f"https://bdtd.ibict.br/vufind/Search/Results?"
-                    f"lookfor={query_encoded}&type=AllFields&"
-                    f"filter%5B%5D=publishDate%3A%22%5B{ano}+TO+{ano}%5D%22")
-        
-        elif "SciELO" in fonte:
-            return f"https://search.scielo.org/?q={query_encoded}&filter[year][]={ano}"
-        
-        elif "Scholar" in fonte:
-            return f"https://scholar.google.com.br/scholar?q={query_encoded}+as_ylo={ano}&as_yhi={ano}"
-        
-        # Fallback genérico para as outras fontes cadastradas na View
-        base_url = self.view.fontes_disponiveis.get(fonte, "")
-        return f"{base_url}search?q={query_encoded}"
-
+    
     def _executar_tarefa_busca(self, url):
         """Tarefa executada em Thread para não travar a interface."""
         try:
-            # O robô de busca retorna uma lista de dicionários
+            # 1. Recolha de metadados da interface
             fonte = self.view.fonte_selecionada_var.get()
+            ano = self.view.ano_selecionado_var.get()
+            termo = self.view.var_inc_unica.get()
+            
+            meta_dados = {
+                'ano': ano,
+                'termo': termo,
+                'agregador': fonte
+            }
+
             config_site = CONFIG_AGREGADORES.get(fonte)
 
             def atualizar_gui(msg):
                 self.root.after(0, lambda: self.view.lbl_status.config(text=msg))
 
-            # A função agora é chamada com o parâmetro de configuração
-            resultados = leitor_de_paginas.realizar_busca_recursiva(url, config_site, atualizar_gui)
+            # 2. Passagem dos metadados para a função agnóstica
+            resultados = leitor_de_paginas.realizar_busca_recursiva(
+                url, config_site, meta_dados, atualizar_gui
+            )
             
-            # Salva no SQLite (o método retorna quantos itens novos foram inseridos)
-            novos_itens = database.salvar_resultados(resultados)
+            # 3. Salva no banco (garante que a função salvar_resultados trate os novos campos)
+            novos = database.salvar_resultados(resultados)
             
-            # Atualiza a interface de volta na Main Thread
             self.root.after(0, self.carregar_do_banco)
-            self.root.after(0, lambda: messagebox.showinfo(
-                "Busca Concluída", 
-                f"Encontrados: {len(resultados)}\nNovos no banco: {novos_itens}"
-            ))
+            self.root.after(0, lambda: messagebox.showinfo("Sucesso", f"Coletados {len(resultados)} itens."))
             
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Erro na Busca", f"Detalhes: {str(e)}"))
-        finally:
-            self.root.after(0, self.validar_estado_botoes)
+            self.root.after(0, lambda: messagebox.showerror("Erro", str(e)))
     
     def carregar_do_banco(self):
         """Lê os dados do SQLite e popula a Treeview."""
@@ -103,8 +80,14 @@ class AppController:
             tag = 'juridico' if "Jurídico" in classif else 'nao_juridico'
             
             self.view.tree.insert("", "end", values=(
-                d['id'], d['titulo'], d['autor'], d['universidade'], 
-                d['programa'], classif, "🔍 Ler Resumo", d['link']
+                d['id'], 
+                d['titulo'], 
+                d['autor'], 
+                d.get('ano', '-'),       
+                d.get('termo', '-'),     
+                d.get('agregador', '-'), 
+                "🔍 Detalhes", 
+                d['link']
             ), tags=(tag,))
 
     def clique_na_tabela(self, event):
@@ -131,16 +114,44 @@ class AppController:
             threading.Thread(target=self._task_scrap_detalhado, args=(link,), daemon=True).start()
 
     def _task_scrap_detalhado(self, link):
-        """Executa Selenium em segundo plano para capturar o resumo."""
+        """Executa Selenium em segundo plano para capturar o resumo e metadados."""
         try:
             res = leitor_de_paginas.ler_detalhes_trabalho(link)
+            
+            # Persistência no banco
             database.salvar_detalhes_completos(
-                link, res['resumo'], res['programa'], res['universidade'], res['classificacao']
+                link,
+                res['resumo'],
+                res['programa'],
+                res['universidade'],
+                res['classificacao'],
+                res['link_pdf']
             )
+            
+            # Montagem da string formatada para a UI
+            info_painel = (
+                f"UNIVERSIDADE: {res['universidade']}\n"
+                f"PROGRAMA: {res['programa']}\n"
+                f"PDF: {res['link_pdf']}\n"
+                f"{'-'*40}\n"
+                f"RESUMO: {res['resumo']}"
+            )
+
+            # Atualizações da Interface (Thread Safe)
             self.root.after(0, self.carregar_do_banco)
-            self.root.after(0, lambda: self.view.exibir_resumo(res['resumo']))
+            # Mantemos apenas a chamada com a informação completa:
+            self.root.after(0, lambda: self.view.exibir_resumo(info_painel))
+            self.root.after(0, lambda: self.view.lbl_status.config(
+                text="Detalhes extraídos com sucesso!", fg="green"
+            ))
+
         except Exception as e:
-            self.root.after(0, lambda: messagebox.showerror("Erro no Scrap", str(e)))
+            self.root.after(0, lambda: self.view.lbl_status.config(
+                text="Erro ao extrair detalhes.", fg="red"
+            ))
+            self.root.after(0, lambda: messagebox.showerror(
+                "Erro no Scrap Detalhado", f"Falha ao processar {link}:\n{str(e)}"
+            ))    
     
     def ordenar_coluna(self, col, reverse):
         """Ordena a Treeview de forma inteligente (numérica ou alfabética)."""
@@ -158,11 +169,11 @@ class AppController:
 
         self.view.tree.heading(col, command=lambda: self.ordenar_coluna(col, not reverse))
 
-    def abrir_link(self, event):
-        """Abre a URL original no navegador ao dar duplo clique."""
-        item = self.view.tree.selection()
-        if item:
-            link = self.view.tree.item(item, "values")[7]
+    def abrir_link(self, event=None): # Adicionado event=None para ser opcional
+        """Abre o link da linha selecionada. Funciona para duplo clique ou menu."""
+        selecao = self.view.tree.selection()
+        if selecao:
+            link = self.view.tree.item(selecao[0], "values")[7]
             if link and link != "N/A":
                 webbrowser.open(link)
 
@@ -182,6 +193,46 @@ class AppController:
         else:
             self.view.btn_buscar.config(state="disabled", bg="#95a5a6")
             self.view.lbl_status.config(text="Selecione Fonte, Ano e Termo.", fg="red")
+
+    def abrir_link_contexto(self):
+        self.abrir_link()
+
+    def extrair_detalhes_contexto(self):
+        selecao = self.view.tree.selection()
+        if selecao:
+            link = self.view.tree.item(selecao[0], "values")[7]
+            self._gerenciar_detalhes(link)
+
+    def limpar_detalhes_contexto(self):
+        """Apaga os metadados (Uni, Programa, Resumo, PDF) da linha selecionada."""
+        selecao = self.view.tree.selection()
+        if not selecao:
+            return
+
+        # Obtém os valores da linha (o ID está no índice 0)
+        valores = self.view.tree.item(selecao[0], "values")
+        id_trabalho = valores[0]
+        titulo = valores[1]
+
+        # Confirmação com o usuário
+        pergunta = messagebox.askyesno("Confirmar Reset", 
+            f"Deseja apagar os detalhes extraídos de:\n'{titulo}'?")
+        
+        if pergunta:
+            try:
+                # Chama a função existente no seu database.py
+                database.limpar_detalhes_trabalho(id_trabalho)
+                
+                # Atualiza a tabela para refletir as mudanças
+                self.carregar_do_banco()
+                
+                # Se o painel de resumo estiver aberto, limpa o texto
+                self.view.exibir_resumo("") 
+                self.view.ocultar_detalhes()
+                
+                self.view.lbl_status.config(text="Detalhes removidos com sucesso.", fg="blue")
+            except Exception as e:
+                messagebox.showerror("Erro", f"Não foi possível limpar os dados: {e}")
 
     def iniciar(self):
         self.root.mainloop()
