@@ -20,16 +20,17 @@ def inicializar_banco():
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS trabalhos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                titulo TEXT,
-                autor TEXT,
+                titulo TEXT, 
+                autor TEXT, 
                 link TEXT,
-                universidade TEXT,
-                programa TEXT,
+                link_universidade TEXT,  
+                link_pdf TEXT,          
+                universidade TEXT, 
+                programa TEXT, 
                 classificacao TEXT,
-                resumo TEXT,
-                link_pdf TEXT,
-                ano TEXT,
-                agregador TEXT,
+                resumo TEXT, 
+                ano TEXT, 
+                agregador TEXT, 
                 termo TEXT,
                 data_coleta DATETIME DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE(link, termo)
@@ -38,16 +39,19 @@ def inicializar_banco():
         conn.commit()
 
 def salvar_resultados(lista_trabalhos):
-    """Insere novos trabalhos usando transação única para performance."""
     count_novos = 0
     with abrir_conexao() as conn:
         cursor = conn.cursor()
         for t in lista_trabalhos:
             cursor.execute("""
-                INSERT OR IGNORE INTO trabalhos (titulo, autor, link, ano, agregador, termo)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (t.get('titulo'), t.get('autor'), t.get('link'), t.get('ano'), t.get('agregador'), t.get('termo')))
-            
+                INSERT OR IGNORE INTO trabalhos 
+                (titulo, autor, link, link_universidade, ano, agregador, termo)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                t.get('titulo'), t.get('autor'), t.get('link'), 
+                t.get('link_universidade'), t.get('ano'), 
+                t.get('agregador'), t.get('termo')
+            ))
             if cursor.rowcount > 0:
                 count_novos += 1
         conn.commit()
@@ -64,6 +68,23 @@ def salvar_detalhes_completos(link, resumo, programa, uni, classe, link_pdf=None
         """, (resumo, programa, uni, classe, link_pdf, link))
         conn.commit()
 
+def buscar_trabalho_por_id(id_trabalho):
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM trabalhos WHERE id = ?", (id_trabalho,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+
+def salvar_detalhes_por_id(id_trabalho, resumo, programa, uni, classe, link_pdf):
+    with abrir_conexao() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE trabalhos 
+            SET resumo = ?, programa = ?, universidade = ?, classificacao = ?, link_pdf = ?
+            WHERE id = ?
+        """, (resumo, programa, uni, classe, link_pdf, id_trabalho))
+        conn.commit()
+        
 def buscar_trabalho_por_link(link):
     """Retorna um dicionário com os dados do trabalho ou None."""
     with abrir_conexao() as conn:
@@ -90,3 +111,4 @@ def limpar_detalhes_trabalho(id_trabalho):
             WHERE id = ?
         """, (id_trabalho,))
         conn.commit()
+        

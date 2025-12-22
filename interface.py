@@ -155,13 +155,20 @@ class InterfaceGrafica:
         frame = tk.Frame(self.root)
         frame.pack(fill="both", expand=True, padx=10, pady=5)
 
-        self.colunas = ("ID", "Título", "Autor", "Ano", "Termo", "Agregador", "Ação", "Link")
+        self.colunas = ("ID", "Título", "Autor", "Uni", "Programa", "Classe", "Ano", "Termo", "Agregador", "Link Uni", "Ação", "Link")
         self.tree = ttk.Treeview(frame, columns=self.colunas, show='headings')
 
-        larguras = {"ID": 40, "Título": 300, "Autor": 150, "Ano": 60, "Termo": 120, "Agregador": 120, "Ação": 120, "Link": 0,"Ano": 60, "Termo": 100, "Agregador": 100}
+        larguras = {
+            "ID": 40, "Título": 200, "Autor": 120, 
+            "Uni": 60, "Programa": 120, "Classe": 80,
+            "Ano": 50, "Termo": 80, "Agregador": 90, 
+            "Link Uni": 150, # Nova coluna visível
+            "Ação": 100, "Link": 0
+        }
+        
         for col in self.colunas:
             self.tree.heading(col, text=col, command=lambda c=col: self.controller.ordenar_coluna(c, False))
-            self.tree.column(col, width=larguras.get(col, 100), anchor="w" if col=="Título" else "center")
+            self.tree.column(col, width=larguras.get(col, 100), anchor="w" if col in ["Título", "Programa"] else "center")
         
         self.tree.column("Link", width=0, stretch=tk.NO)
 
@@ -170,30 +177,42 @@ class InterfaceGrafica:
         self.tree.pack(side="left", fill="both", expand=True)
         scroll.pack(side="right", fill="y")
 
-        # --- ADICIONE ESTAS LINHAS PARA O BOTÃO DIREITO ---
         self.menu_contexto = tk.Menu(self.root, tearoff=0)
-        self.menu_contexto.add_command(label="🌐 Abrir no Navegador", 
-                                       command=self.controller.abrir_link_contexto)
-        self.menu_contexto.add_command(label="🔍 Ver Detalhes", 
-                                       command=self.controller.extrair_detalhes_contexto)        
+        self.menu_contexto.add_command(
+            label="🌐 Abrir URL na Universidade", 
+            command=self.controller.abrir_link_universidade
+        )
         self.menu_contexto.add_separator()
-        self.menu_contexto.add_command(label="🗑️ Apagar Detalhes", 
-                                       command=self.controller.limpar_detalhes_contexto)
+        self.menu_contexto.add_command(
+            label="🔍 Ver Metadados no BDTD", 
+            command=self.controller.extrair_detalhes_contexto
+        )
 
-
-        # Vincula o botão direito (Button-3 no Windows/Linux)
+        # 2. Vínculos (Binds)
+        # Duplo clique: Abre o link do agregador (ex: BDTD)
+        self.tree.bind("<Double-1>", self.controller.abrir_link_agregador)
+        
+        # Botão direito: Exibe o menu de contexto
         self.tree.bind("<Button-3>", self._exibir_menu_contexto)
+        
+        # Manter o feedback visual (cursor de mão) se necessário
+        self.tree.bind("<Motion>", self._mudar_cursor_coluna)
 
-        self.tree.bind("<ButtonRelease-1>", self.controller.clique_na_tabela)
-        self.tree.bind("<Double-1>", self.controller.abrir_link)
-         
+    def _mudar_cursor_coluna(self, event):
+        """Altera o cursor para 'hand2' se estiver sobre a coluna 'Ação'."""
+        region = self.tree.identify_region(event.x, event.y)
+        coluna = self.tree.identify_column(event.x)
+        
+        # A coluna 'Ação' é a #10 na sua estrutura atual
+        if region == "cell" and coluna == "#11":
+            self.tree.configure(cursor="hand2")
+        else:
+            self.tree.configure(cursor="") # Volta ao cursor padrão
+        
     def _exibir_menu_contexto(self, event):
-        """Identifica a linha clicada e exibe o menu."""
-        item_clicado = self.tree.identify_row(event.y)
-        if item_clicado:
-            # Seleciona automaticamente a linha onde o usuário clicou com o direito
-            self.tree.selection_set(item_clicado)
-            # Exibe o menu na posição do mouse
+        item_id = self.tree.identify_row(event.y)
+        if item_id:
+            self.tree.selection_set(item_id) # Seleciona a linha automaticamente
             self.menu_contexto.post(event.x_root, event.y_root)
 
     def _criar_painel_detalhes(self):
