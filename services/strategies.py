@@ -57,6 +57,10 @@ from parsers.ufs_parser import UFSParser
 from parsers.uel_parser import UELParser
 from parsers.uea_parser import UEAParser
 from parsers.ufu_parser import UFUParser
+from parsers.uft_parser import UFTParser
+from parsers.ufpe_parser import UFPEParser
+from parsers.uenp_parser import UENPParser
+from parsers.ufcg_parser import UFCGParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -133,6 +137,14 @@ class BDTDStrategy:
             "uea.edu.br": UEAParser(),
             "repositorio.ufu.br": UFUParser(),
             "ufu.br": UFUParser(),
+            "repositorio.uft.edu.br": UFTParser(),
+            "uft.edu.br": UFTParser(),
+            "repositorio.ufpe.br": UFPEParser(),
+            "ufpe.br": UFPEParser(),
+            "repositorio.uenp.edu.br": UENPParser(),
+            "uenp.edu.br": UENPParser(),
+            "dspace.sti.ufcg.edu.br": UFCGParser(),
+            "ufcg.edu.br": UFCGParser(),
         }
         
         self._default_parser = GenericParser()

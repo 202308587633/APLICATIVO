@@ -5,7 +5,7 @@ from parsers.base_parser import BaseParser
 
 class GenericParser(BaseParser):
     def __init__(self):
-        super().__init__(sigla="Genérico", universidade="-")
+        super().__init__(sigla="-", universidade="-")
 
     def extract_pure_soup(self, html_content, url, on_progress=None):
         """
