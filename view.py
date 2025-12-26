@@ -43,7 +43,6 @@ class ScraperView:
         
         tk.Label(self.input_frame, text="Termo:").pack(side=tk.LEFT)
         self.combo_term = ttk.Combobox(self.input_frame, values=["jurimetria", "inteligência artificial", "análise de discurso", "algoritmo", "direito digital" , "tecnologia da informação"], width=60)
-        self.combo_term = ttk.Combobox(self.input_frame, values=["jurimetria", "inteligência artificial", "análise de discurso", "algoritmo", "direito digital" , "tecnologia da informação"], width=60)
         self.combo_term.pack(side=tk.LEFT, padx=5)
         
         tk.Label(self.input_frame, text="Ano:").pack(side=tk.LEFT)
@@ -210,7 +209,6 @@ class ScraperView:
     def _on_right_click(self, event):
         """
         Menu de contexto com opções de navegação, gestão e extração/limpeza.
-        Menu de contexto com opções de navegação, gestão e extração/limpeza.
         """
         item_id = self.tree.identify_row(event.y)
         if not item_id: return
@@ -228,12 +226,10 @@ class ScraperView:
         link_pdf = meta.get('link_pdf', '')
         
         # Estados dos Arquivos
-        # Estados dos Arquivos
         st_bdtd_file = "normal" if status.get('has_bdtd') else "disabled"
         st_repo_file = "normal" if status.get('has_repo') else "disabled"
         st_search_file = "normal" if status.get('has_search') else "disabled"
 
-        # Estados dos Links
         # Estados dos Links
         st_url_bdtd = "normal" if link_bdtd and link_bdtd.startswith("http") else "disabled"
         st_url_repo = "normal" if link_repo and link_repo.startswith("http") else "disabled"
@@ -274,10 +270,6 @@ class ScraperView:
         m.add_command(label="❌ Apagar Dados Extraídos", 
                       command=lambda: self.on_action_item('delete_extraction', db_id, 'repo'))
 
-        # --- NOVA OPÇÃO DE APAGAR ---
-        m.add_command(label="❌ Apagar Dados Extraídos", 
-                      command=lambda: self.on_action_item('delete_extraction', db_id, 'repo'))
-
         m.add_command(label="❌ Apagar HTML", state=st_repo_file, 
                       command=lambda: self.on_action_item('delete', db_id, 'repo'))
         
@@ -290,7 +282,6 @@ class ScraperView:
         m.add_command(label="--- LISTA DE RESULTADOS ---", state="disabled")
         m.add_command(label="🌐 Abrir URL da Lista", 
                       command=lambda: self.on_open_search_url(meta))
-        m.add_command(label="📄 Exibir Lista Local", state=st_search_file, 
         m.add_command(label="📄 Exibir Lista Local", state=st_search_file, 
                       command=lambda: self.on_action_search('view', meta))
         m.add_command(label="❌ Apagar Lista", state=st_search_file, 
