@@ -52,6 +52,11 @@ from parsers.ufpb_parser import UFPBParser
 from parsers.pucminas_parser import PucMinasParser
 from parsers.ufrgs_parser import UFRGSParser
 from parsers.ufba_parser import UFBAParser
+from parsers.idp_parser import IDPParser
+from parsers.ufs_parser import UFSParser
+from parsers.uel_parser import UELParser
+from parsers.uea_parser import UEAParser
+from parsers.ufu_parser import UFUParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -118,6 +123,16 @@ class BDTDStrategy:
             "hdl.handle.net/10183": UFRGSParser(), 
             "repositorio.ufba.br": UFBAParser(),
             "ufba.br": UFBAParser(),
+            "repositorio.idp.edu.br": IDPParser(),
+            "idp.edu.br": IDPParser(),
+            "ri.ufs.br": UFSParser(),
+            "ufs.br": UFSParser(),
+            "repositorio.uel.br": UELParser(),
+            "uel.br": UELParser(),
+            "ri.uea.edu.br": UEAParser(),
+            "uea.edu.br": UEAParser(),
+            "repositorio.ufu.br": UFUParser(),
+            "ufu.br": UFUParser(),
         }
         
         self._default_parser = GenericParser()
