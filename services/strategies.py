@@ -49,6 +49,9 @@ from parsers.ufes_parser import UFESParser
 from parsers.upf_parser import UPFParser
 from parsers.unicesumar_parser import UNICESUMARParser
 from parsers.ufpb_parser import UFPBParser
+from parsers.pucminas_parser import PucMinasParser
+from parsers.ufrgs_parser import UFRGSParser
+from parsers.ufba_parser import UFBAParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -109,6 +112,12 @@ class BDTDStrategy:
             "unicesumar.edu.br": UNICESUMARParser(),
             "repositorio.ufpb.br": UFPBParser(),
             "ufpb.br": UFPBParser(),
+            "bib.pucminas.br": PucMinasParser(),
+            "pucminas.br": PucMinasParser(),
+            "lume.ufrgs.br": UFRGSParser(),
+            "hdl.handle.net/10183": UFRGSParser(), 
+            "repositorio.ufba.br": UFBAParser(),
+            "ufba.br": UFBAParser(),
         }
         
         self._default_parser = GenericParser()
