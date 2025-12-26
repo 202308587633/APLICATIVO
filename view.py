@@ -15,7 +15,8 @@ class ScraperView:
         self.on_action_item = None      
         self.on_action_search = None    
         self.on_reprocess = None        
-        self.on_open_search_url = None # <--- NOVO CALLBACK
+        self.on_open_search_url = None
+        self.on_show_sample = None  # <--- NOVO CALLBACK PARA O BOTÃO AMOSTRA
         
         self.search_info_command = None
         self.clear_pdf_command = None
@@ -59,6 +60,16 @@ class ScraperView:
         
         self.btn_refresh = tk.Button(self.input_frame, text="Recarregar", bg="#2196F3", fg="white")
         self.btn_refresh.pack(side=tk.LEFT, padx=5)
+
+        # --- NOVO BOTÃO DE AMOSTRA ---
+        self.btn_sample = tk.Button(
+            self.input_frame, 
+            text="🔍 Amostra (1/Univ)", 
+            bg="#d9edf7", 
+            # Chama a função conectada pelo Controller, se existir
+            command=lambda: self.on_show_sample() if self.on_show_sample else print("Callback de amostra não conectado")
+        )
+        self.btn_sample.pack(side=tk.LEFT, padx=5)
         
         # Barra de Status Clicável
         self.status_frame = tk.Frame(self.root, bd=1, relief=tk.SUNKEN)
@@ -134,7 +145,6 @@ class ScraperView:
         self.tree.bind("<Button-3>", self._on_right_click)
         self.tree.bind("<Double-1>", self._on_double_click)
 
-    # --- MÉTODO QUE FALTAVA (CORREÇÃO DO ERRO) ---
     def get_inputs(self):
         """Retorna os valores atuais dos campos de entrada."""
         return {
@@ -143,7 +153,6 @@ class ScraperView:
             "year": self.combo_year.get()
         }
 
-    # --- Métodos de Interface ---
     def add_row(self, *args):
         """Adiciona linha na visualização e no cache de dados."""
         # Salva na lista completa para permitir filtragem posterior
@@ -159,7 +168,6 @@ class ScraperView:
         self.all_data = [] # Limpa cache
         for item in self.tree.get_children():
             self.tree.delete(item)
-
        
     def update_status(self, text): 
         hora = datetime.datetime.now().strftime("%H:%M:%S")
@@ -192,7 +200,6 @@ class ScraperView:
     def open_browser(self, url):
         if url and url.startswith("http"): webbrowser.open_new_tab(url)
 
-    # --- Configuração de Comandos ---
     def set_start_command(self, cmd): self.btn_run.config(command=cmd)
     def set_stop_command(self, cmd): self.btn_stop.config(command=cmd)
     def set_refresh_command(self, cmd): self.btn_refresh.config(command=cmd)
@@ -202,10 +209,8 @@ class ScraperView:
         self.combo_term.bind("<<ComboboxSelected>>", cmd)
         self.combo_engine.bind("<<ComboboxSelected>>", cmd)
 
-    # Setters legados (para compatibilidade se o controller chamar)
     def set_search_info_command(self, cmd): pass 
 
-    # --- Menu de Contexto (Lógica Granular) ---
     def _on_right_click(self, event):
         """
         Menu de contexto com opções de navegação, gestão e extração/limpeza.
@@ -295,7 +300,6 @@ class ScraperView:
                       command=lambda: self._handle_action("set_sigla", item_id, "repo", None))
 
         m.post(event.x_root, event.y_root)
-
         
     def _on_double_click(self, event):
         item_id = self.tree.identify_row(event.y)
@@ -347,8 +351,6 @@ class ScraperView:
         # Alterna direção para o próximo clique
         self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))
         
-#################################
-
     def _handle_action(self, action, item_id, target_type, url=None):
         """
         Método auxiliar para disparar ações do menu de contexto.

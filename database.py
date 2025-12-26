@@ -170,13 +170,27 @@ class ScraperDB:
             val = '-' if 'link' in field_type else ''
             self.execute_query(f"UPDATE trabalhos SET {map_fields[field_type]} = ? WHERE rowid = ?", (val, db_id))
             
-    # --- NOVOS MÉTODOS (Adicionar ao final da classe) ---
-
     def delete_search_page(self, termo, ano, pagina):
         """Apaga o conteúdo HTML da página de busca (mantendo o registro)."""
         query = "UPDATE paginas_busca SET html_source = '' WHERE termo=? AND ano=? AND pagina=?"
         self.execute_query(query, (termo, str(ano), pagina))
-           
-#########################
-
-           
+                     
+    def fetch_one_per_university(self):
+        """
+        Retorna apenas uma linha de cada universidade encontrada (GROUP BY sigla).
+        Útil para validar se os parsers de diferentes universidades estão funcionando.
+        """
+        # Seleciona as mesmas colunas que o fetch_all para manter compatibilidade com a View
+        query = '''
+            SELECT rowid, termo, titulo, autor, sigla, universidade, programa, link_pdf, link_repo, link_bdtd 
+            FROM trabalhos 
+            GROUP BY sigla 
+            ORDER BY sigla ASC
+        '''
+        try:
+            # CORREÇÃO: Abre a conexão corretamente usando o método auxiliar da classe
+            with self._get_connection() as conn:
+                return conn.execute(query).fetchall()
+        except Exception as e:
+            print(f"Erro ao buscar amostra: {e}")
+            return []

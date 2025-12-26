@@ -43,6 +43,12 @@ from parsers.ufjf_parser import UFJFParser
 from parsers.ufpel_parser import UFPELParser
 from parsers.mackenzie_parser import MackenzieParser
 from parsers.unicamp_parser import UNICAMPParser
+from parsers.unipe_parser import UNIPEParser
+from parsers.ufam_parser import UFAMParser
+from parsers.ufes_parser import UFESParser
+from parsers.upf_parser import UPFParser
+from parsers.unicesumar_parser import UNICESUMARParser
+from parsers.ufpb_parser import UFPBParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -91,6 +97,18 @@ class BDTDStrategy:
             "mackenzie.br": MackenzieParser(),
             "repositorio.unicamp.br": UNICAMPParser(),
             "hdl.handle.net/20.500.12733": UNICAMPParser(), # Handle da UNICAMP
+            "repositorio.cruzeirodosul.edu.br": UNIPEParser(),
+            "unipe.edu.br": UNIPEParser(), # Caso apareça algum link antigo
+            "tede.ufam.edu.br": UFAMParser(),
+            "ufam.edu.br": UFAMParser(),
+            "repositorio.ufes.br": UFESParser(),
+            "ufes.br": UFESParser(),
+            "repositorio.upf.br": UPFParser(),
+            "upf.br": UPFParser(),
+            "rdu.unicesumar.edu.br": UNICESUMARParser(),
+            "unicesumar.edu.br": UNICESUMARParser(),
+            "repositorio.ufpb.br": UFPBParser(),
+            "ufpb.br": UFPBParser(),
         }
         
         self._default_parser = GenericParser()

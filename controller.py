@@ -28,28 +28,6 @@ class ScraperController:
         self.load_initial_data()
         self.check_queue()
 
-    def _setup_commands(self):
-        """Conecta os botões e eventos da View às funções do Controller."""
-        self.view.set_start_command(self.start_scraping)
-        self.view.set_stop_command(self.stop_scraping)
-        self.view.set_year_changed_command(self.update_url_preview)
-        self.view.set_refresh_command(self.refresh_table_data)
-        
-        # --- CONEXÕES DO MENU DE CONTEXTO ---
-        self.view.get_row_status = self.db.check_html_exists
-        self.view.on_action_item = self.handle_item_action
-        self.view.on_action_search = self.handle_search_page_action
-        self.view.on_reprocess = self.retry_info_fetch
-        
-        # NOVO: Conecta a ação de abrir a URL da lista (recálculo de URL)
-        self.view.on_open_search_url = self.open_generated_search_url
-        
-        # Callbacks de compatibilidade/legado
-        self.view.set_search_info_command(self.retry_info_fetch)
-        self.view.clear_pdf_command = lambda db_id: self.manage_field(db_id, 'link_pdf')
-        self.view.redownload_command = lambda db_id, url: self.force_redownload(db_id, url, 'repo' if 'bdtd.ibict' not in url else 'bdtd')
-        self.view.clear_repo_command = lambda db_id: self.manage_field(db_id, 'link_repo')
-
     def handle_search_page_action(self, action, meta):
         """Gerencia ações para a Página de Busca (Lista)."""
         termo, ano, pagina = meta['termo'], meta['ano'], meta['pagina']
@@ -242,8 +220,7 @@ class ScraperController:
             
             self.view.update_status(f"Limpo com sucesso: {field_type}")
         except Exception as e:
-            self.view.update_status(f"Erro ao limpar {field_type}: {e}")
-            
+            self.view.update_status(f"Erro ao limpar {field_type}: {e}")        
 
     def open_generated_search_url(self, meta):
         """Recontrói a URL da busca original e abre no navegador."""
@@ -565,3 +542,51 @@ class ScraperController:
                 
         except Exception as e:
             self.view.update_status(f"Erro visual ao atualizar sigla: {e}")
+            
+    def _setup_commands(self):
+        """Conecta os botões e eventos da View às funções do Controller."""
+        self.view.set_start_command(self.start_scraping)
+        self.view.set_stop_command(self.stop_scraping)
+        self.view.set_year_changed_command(self.update_url_preview)
+        self.view.set_refresh_command(self.refresh_table_data)
+        
+        # --- CONEXÕES DO MENU DE CONTEXTO ---
+        self.view.get_row_status = self.db.check_html_exists
+        self.view.on_action_item = self.handle_item_action
+        self.view.on_action_search = self.handle_search_page_action
+        self.view.on_reprocess = self.retry_info_fetch
+        
+        # Conecta a ação de abrir a URL da lista (recálculo de URL)
+        self.view.on_open_search_url = self.open_generated_search_url
+        
+        # --- NOVO: Conecta o botão de amostra ---
+        self.view.on_show_sample = self.show_university_sample
+        
+        # Callbacks de compatibilidade/legado
+        self.view.set_search_info_command(self.retry_info_fetch)
+        self.view.clear_pdf_command = lambda db_id: self.manage_field(db_id, 'link_pdf')
+        self.view.redownload_command = lambda db_id, url: self.force_redownload(db_id, url, 'repo' if 'bdtd.ibict' not in url else 'bdtd')
+        self.view.clear_repo_command = lambda db_id: self.manage_field(db_id, 'link_repo')
+
+    def show_university_sample(self):
+        """
+        Carrega na tabela apenas um registro de cada universidade.
+        """
+        try:
+            # Busca os dados agrupados do banco (Requer método no database.py)
+            rows = self.db.fetch_one_per_university()
+            
+            # Limpa a tabela e o cache de dados da view
+            self.view.clear_table()
+            
+            # Reinsere os dados filtrados usando o método da view
+            # Isso garante que a lista interna 'all_data' da view seja atualizada,
+            # permitindo que os filtros de texto funcionem sobre essa amostra
+            for row in rows:
+                self.view.add_row(*row)
+            
+            self.view.update_status(f"Exibindo amostra: {len(rows)} universidades únicas.")
+            
+        except Exception as e:
+            self.view.update_status(f"Erro ao filtrar amostra: {e}")
+            
