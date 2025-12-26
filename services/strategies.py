@@ -61,6 +61,9 @@ from parsers.uft_parser import UFTParser
 from parsers.ufpe_parser import UFPEParser
 from parsers.uenp_parser import UENPParser
 from parsers.ufcg_parser import UFCGParser
+from parsers.unifg_parser import UNIFGParser
+from parsers.fiocruz_parser import FiocruzParser
+from parsers.unila_parser import UNILAParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -145,6 +148,12 @@ class BDTDStrategy:
             "uenp.edu.br": UENPParser(),
             "dspace.sti.ufcg.edu.br": UFCGParser(),
             "ufcg.edu.br": UFCGParser(),
+            "repositorio.animaeducacao.com.br": UNIFGParser(),
+            "animaeducacao.com.br": UNIFGParser(),
+            "arca.fiocruz.br": FiocruzParser(),
+            "fiocruz.br": FiocruzParser(),
+            "dspace.unila.edu.br": UNILAParser(),
+            "unila.edu.br": UNILAParser(),
         }
         
         self._default_parser = GenericParser()
