@@ -76,7 +76,7 @@ from parsers.unipampa_parser import UNIPAMPAParser
 from parsers.ufn_parser import UFNParser
 from parsers.ufms_parser import UFMSParser
 from parsers.ufrrj_parser import UFRRJParser
-from parsers.uftpr_parser import UTFPRParser
+from parsers.utfpr_parser import UTFPRParser
 
 class BDTDStrategy:
     def __init__(self):
