@@ -73,6 +73,7 @@ from parsers.ufscar_parser import UFSCARParser
 from parsers.unioeste_parser import UNIOESTEParser
 from parsers.uninter_parser import UNINTERParser
 from parsers.unipampa_parser import UNIPAMPAParser
+from parsers.ufn_parser import UFNParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -181,6 +182,8 @@ class BDTDStrategy:
             "uninter.com": UNINTERParser(),
             "repositorio.unipampa.edu.br": UNIPAMPAParser(),
             "unipampa.edu.br": UNIPAMPAParser(),
+            "tede.universidadefranciscana.edu.br": UFNParser(),
+            "universidadefranciscana.edu.br": UFNParser(),
         }
         
         self._default_parser = GenericParser()
