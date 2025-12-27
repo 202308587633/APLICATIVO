@@ -74,6 +74,9 @@ from parsers.unioeste_parser import UNIOESTEParser
 from parsers.uninter_parser import UNINTERParser
 from parsers.unipampa_parser import UNIPAMPAParser
 from parsers.ufn_parser import UFNParser
+from parsers.ufms_parser import UFMSParser
+from parsers.ufrrj_parser import UFRRJParser
+from parsers.uftpr_parser import UTFPRParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -184,6 +187,12 @@ class BDTDStrategy:
             "unipampa.edu.br": UNIPAMPAParser(),
             "tede.universidadefranciscana.edu.br": UFNParser(),
             "universidadefranciscana.edu.br": UFNParser(),
+            "repositorio.ufms.br": UFMSParser(),
+            "ufms.br": UFMSParser(),
+            "rima.ufrrj.br": UFRRJParser(),
+            "ufrrj.br": UFRRJParser(),
+            "repositorio.utfpr.edu.br": UTFPRParser(),
+            "utfpr.edu.br": UTFPRParser(),
         }
         
         self._default_parser = GenericParser()
