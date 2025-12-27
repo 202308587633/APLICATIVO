@@ -65,6 +65,9 @@ from parsers.unifg_parser import UNIFGParser
 from parsers.fiocruz_parser import FiocruzParser
 from parsers.unila_parser import UNILAParser
 from parsers.ufv_parser import UFVParser
+from parsers.uffs_parser import UFFSParser
+from parsers.umesp_parser import UMESPParser
+from parsers.ufersa_parser import UFERSAParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -157,6 +160,12 @@ class BDTDStrategy:
             "unila.edu.br": UNILAParser(),
             "locus.ufv.br": UFVParser(),
             "ufv.br": UFVParser(),
+            "rd.uffs.edu.br": UFFSParser(),
+            "uffs.edu.br": UFFSParser(),
+            "repositorio.metodista.br": UMESPParser(),
+            "metodista.br": UMESPParser(),
+            "repositorio.ufersa.edu.br": UFERSAParser(),
+            "ufersa.edu.br": UFERSAParser(),
         }
         
         self._default_parser = GenericParser()
