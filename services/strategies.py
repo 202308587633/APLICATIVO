@@ -71,6 +71,8 @@ from parsers.ufersa_parser import UFERSAParser
 from parsers.ucsal_parser import UCSALParser
 from parsers.ufscar_parser import UFSCARParser
 from parsers.unioeste_parser import UNIOESTEParser
+from parsers.uninter_parser import UNINTERParser
+from parsers.unipampa_parser import UNIPAMPAParser
 
 class BDTDStrategy:
     def __init__(self):
@@ -175,6 +177,10 @@ class BDTDStrategy:
             "ufscar.br": UFSCARParser(),
             "tede.unioeste.br": UNIOESTEParser(),
             "unioeste.br": UNIOESTEParser(),
+            "repositorio.uninter.com": UNINTERParser(),
+            "uninter.com": UNINTERParser(),
+            "repositorio.unipampa.edu.br": UNIPAMPAParser(),
+            "unipampa.edu.br": UNIPAMPAParser(),
         }
         
         self._default_parser = GenericParser()

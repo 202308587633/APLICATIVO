@@ -120,24 +120,6 @@ class ScraperController:
         self.load_initial_data()
         self.view.update_status("Atualizado.")
 
-    def check_queue(self):
-        try:
-            while True:
-                msg_type, content = self.msg_queue.get_nowait()
-                if msg_type == 'row':
-                    self.view.add_row(
-                        content.get('id',0), content.get('termo',''), content.get('titulo',''), 
-                        content.get('autor',''), content.get('sigla','-'), content.get('universidade','-'),
-                        content.get('programa','-'), content.get('link_pdf',''), content.get('link_repo',''), 
-                        content.get('link_bdtd','')
-                    )
-                elif msg_type == 'status': self.view.update_status(content)
-                elif msg_type == 'done': 
-                    self.stop_scraping()
-                    self.view.update_status(content)
-        except queue.Empty: pass
-        finally: self.root.after(100, self.check_queue)
-
     def update_url_preview(self, event=None):
         inputs = self.view.get_inputs()
         strategy = BDTDStrategy() if inputs['engine'] == "BDTD" else GoogleStrategy()
@@ -187,41 +169,6 @@ class ScraperController:
             
             ############################################
             
-    def manage_field(self, db_id, field_type):
-        """Limpa campos no banco e atualiza imediatamente a interface."""
-        try:
-            self.db.clear_field(db_id, field_type)
-            
-            # Busca o item na Treeview para atualizar visualmente
-            items = self.view.tree.get_children()
-            target_item = None
-            for item in items:
-                # Compara o ID (primeira coluna)
-                if str(self.view.tree.item(item, 'values')[0]) == str(db_id):
-                    target_item = item
-                    break
-            
-            if target_item:
-                vals = list(self.view.tree.item(target_item, 'values'))
-                
-                # Atualiza as colunas visuais conforme o tipo apagado
-                if field_type == 'extracted_data':
-                    # Índices na Treeview: 4=Sigla, 5=Universidade, 6=Programa
-                    vals[4] = '-'
-                    vals[5] = '-'
-                    vals[6] = '-'
-                elif field_type == 'link_pdf':
-                    vals[7] = '-' # Coluna PDF
-                elif field_type == 'link_repo':
-                    vals[8] = '-' # Coluna Repo
-                
-                # Aplica os novos valores na linha
-                self.view.tree.item(target_item, values=tuple(vals))
-            
-            self.view.update_status(f"Limpo com sucesso: {field_type}")
-        except Exception as e:
-            self.view.update_status(f"Erro ao limpar {field_type}: {e}")        
-
     def open_generated_search_url(self, meta):
         """Recontrói a URL da busca original e abre no navegador."""
         try:
@@ -239,41 +186,6 @@ class ScraperController:
             
             
             ############################################
-            
-    def manage_field(self, db_id, field_type):
-        """Limpa campos no banco e atualiza imediatamente a interface."""
-        try:
-            self.db.clear_field(db_id, field_type)
-            
-            # Busca o item na Treeview para atualizar visualmente
-            items = self.view.tree.get_children()
-            target_item = None
-            for item in items:
-                # Compara o ID (primeira coluna)
-                if str(self.view.tree.item(item, 'values')[0]) == str(db_id):
-                    target_item = item
-                    break
-            
-            if target_item:
-                vals = list(self.view.tree.item(target_item, 'values'))
-                
-                # Atualiza as colunas visuais conforme o tipo apagado
-                if field_type == 'extracted_data':
-                    # Índices na Treeview: 4=Sigla, 5=Universidade, 6=Programa
-                    vals[4] = '-'
-                    vals[5] = '-'
-                    vals[6] = '-'
-                elif field_type == 'link_pdf':
-                    vals[7] = '-' # Coluna PDF
-                elif field_type == 'link_repo':
-                    vals[8] = '-' # Coluna Repo
-                
-                # Aplica os novos valores na linha
-                self.view.tree.item(target_item, values=tuple(vals))
-            
-            self.view.update_status(f"Limpo com sucesso: {field_type}")
-        except Exception as e:
-            self.view.update_status(f"Erro ao limpar {field_type}: {e}")
             
     def _redownload_search_page(self, termo, ano, pagina):
         """Baixa novamente a página de listagem da busca."""
@@ -506,43 +418,7 @@ class ScraperController:
                 
             except Exception as e:
                 self.view.update_status(f"Erro ao atualizar sigla: {e}")
-
-    def _update_treeview_sigla(self, db_id, nova_sigla):
-        """
-        Função auxiliar interna para atualizar a linha específica da tabela.
-        """
-        try:
-            items = self.view.tree.get_children()
-            target_item = None
-            
-            # Procura a linha correspondente ao ID do banco
-            for item in items:
-                row_values = self.view.tree.item(item, 'values')
-                # O ID é a primeira coluna (índice 0)
-                if str(row_values[0]) == str(db_id):
-                    target_item = item
-                    break
-            
-            if target_item:
-                # Pega os valores atuais como lista (para poder editar)
-                # Estrutura: (id, termo, titulo, autor, SIGLA, universidade, ...)
-                vals = list(self.view.tree.item(target_item, 'values'))
-                
-                # O índice 4 corresponde à coluna 'Sigla'
-                if len(vals) > 4:
-                    vals[4] = nova_sigla
-                    
-                    # Reaplica os valores na linha da tabela
-                    self.view.tree.item(target_item, values=tuple(vals))
-                    self.view.update_status(f"Sigla do ID {db_id} atualizada para '{nova_sigla}'.")
-                else:
-                    self.view.update_status("Erro: Estrutura da tabela inesperada.")
-            else:
-                self.view.update_status("Erro: Item não encontrado na tabela para atualização visual.")
-                
-        except Exception as e:
-            self.view.update_status(f"Erro visual ao atualizar sigla: {e}")
-            
+           
     def _setup_commands(self):
         """Conecta os botões e eventos da View às funções do Controller."""
         self.view.set_start_command(self.start_scraping)
@@ -590,3 +466,99 @@ class ScraperController:
         except Exception as e:
             self.view.update_status(f"Erro ao filtrar amostra: {e}")
             
+    def check_queue(self):
+        try:
+            while True:
+                msg_type, content = self.msg_queue.get_nowait()
+                if msg_type == 'row':
+                    # ATUALIZAÇÃO: Incluído 'ano' na 3ª posição (índice 2)
+                    self.view.add_row(
+                        content.get('id', 0), 
+                        content.get('termo', ''), 
+                        content.get('ano', ''),       # <--- CAMPO NOVO
+                        content.get('titulo', ''), 
+                        content.get('autor', ''), 
+                        content.get('sigla', '-'), 
+                        content.get('universidade', '-'),
+                        content.get('programa', '-'), 
+                        content.get('link_pdf', ''), 
+                        content.get('link_repo', ''), 
+                        content.get('link_bdtd', '')
+                    )
+                elif msg_type == 'status': self.view.update_status(content)
+                elif msg_type == 'done': 
+                    self.stop_scraping()
+                    self.view.update_status(content)
+        except queue.Empty: pass
+        finally: self.root.after(100, self.check_queue)
+        
+    def manage_field(self, db_id, field_type):
+        """Limpa campos no banco e atualiza imediatamente a interface."""
+        try:
+            self.db.clear_field(db_id, field_type)
+            
+            # Busca o item na Treeview para atualizar visualmente
+            items = self.view.tree.get_children()
+            target_item = None
+            for item in items:
+                # Compara o ID (primeira coluna)
+                if str(self.view.tree.item(item, 'values')[0]) == str(db_id):
+                    target_item = item
+                    break
+            
+            if target_item:
+                vals = list(self.view.tree.item(target_item, 'values'))
+                
+                # ATUALIZAÇÃO DOS ÍNDICES (Deslocamento +1 devido à coluna Ano)
+                # 0:id, 1:termo, 2:ano, 3:titulo, 4:autor
+                # 5:sigla, 6:univ, 7:prog, 8:pdf, 9:repo, 10:bdtd
+                
+                if field_type == 'extracted_data':
+                    vals[5] = '-' # Sigla
+                    vals[6] = '-' # Universidade
+                    vals[7] = '-' # Programa
+                elif field_type == 'link_pdf':
+                    vals[8] = '-' # Coluna PDF
+                elif field_type == 'link_repo':
+                    vals[9] = '-' # Coluna Repo
+                
+                # Aplica os novos valores na linha
+                self.view.tree.item(target_item, values=tuple(vals))
+            
+            self.view.update_status(f"Limpo com sucesso: {field_type}")
+        except Exception as e:
+            self.view.update_status(f"Erro ao limpar {field_type}: {e}")
+            
+    def _update_treeview_sigla(self, db_id, nova_sigla):
+        """
+        Função auxiliar interna para atualizar a linha específica da tabela.
+        """
+        try:
+            items = self.view.tree.get_children()
+            target_item = None
+            
+            # Procura a linha correspondente ao ID do banco
+            for item in items:
+                row_values = self.view.tree.item(item, 'values')
+                if str(row_values[0]) == str(db_id):
+                    target_item = item
+                    break
+            
+            if target_item:
+                vals = list(self.view.tree.item(target_item, 'values'))
+                
+                # ATUALIZAÇÃO: O índice da coluna 'Sigla' agora é 5 (era 4)
+                if len(vals) > 5:
+                    vals[5] = nova_sigla
+                    
+                    self.view.tree.item(target_item, values=tuple(vals))
+                    self.view.update_status(f"Sigla do ID {db_id} atualizada para '{nova_sigla}'.")
+                else:
+                    self.view.update_status("Erro: Estrutura da tabela inesperada.")
+            else:
+                self.view.update_status("Erro: Item não encontrado na tabela para atualização visual.")
+                
+        except Exception as e:
+            self.view.update_status(f"Erro visual ao atualizar sigla: {e}")
+            
+    

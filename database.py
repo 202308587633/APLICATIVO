@@ -135,7 +135,7 @@ class ScraperDB:
         self.execute_query(query, (data.get('sigla'), data.get('universidade'), data.get('programa'), data.get('link_pdf'), db_id))
 
     def fetch_all(self):
-        query = '''SELECT rowid, termo, titulo, autor, sigla, universidade, programa, link_pdf, link_repo, link_bdtd FROM trabalhos ORDER BY rowid ASC'''
+        query = '''SELECT rowid, termo, ano, titulo, autor, sigla, universidade, programa, link_pdf, link_repo, link_bdtd FROM trabalhos ORDER BY rowid ASC'''
         with self._get_connection() as conn:
             return conn.execute(query).fetchall()
 
@@ -182,7 +182,7 @@ class ScraperDB:
         """
         # Seleciona as mesmas colunas que o fetch_all para manter compatibilidade com a View
         query = '''
-            SELECT rowid, termo, titulo, autor, sigla, universidade, programa, link_pdf, link_repo, link_bdtd 
+            SELECT rowid, termo, ano, titulo, autor, sigla, universidade, programa, link_pdf, link_repo, link_bdtd 
             FROM trabalhos 
             GROUP BY sigla 
             ORDER BY sigla ASC
