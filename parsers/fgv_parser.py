@@ -5,7 +5,7 @@ from parsers.base_parser import BaseParser
 
 class FGVParser(BaseParser):
     def __init__(self):
-        # Configura o nome exato solicitado
+        # Configura o nome padrão (Geralmente Direito SP, mas será verificado dinamicamente)
         super().__init__(
             sigla="FGV", 
             universidade="Escola de Direito de São Paulo da Fundação Getulio Vargas"
@@ -14,20 +14,33 @@ class FGVParser(BaseParser):
     def extract_pure_soup(self, html_content, url, on_progress=None):
         """
         Extrai dados do repositório da FGV (DSpace 7/Angular).
+        Verifica contexto EBAPE (RJ) vs Direito (SP).
         Foca nas meta tags para o PDF e nos breadcrumbs para o Programa.
         """
         soup = BeautifulSoup(html_content, 'html.parser')
         
+        # --- 1. VERIFICAÇÃO DE CONTEXTO (EBAPE vs PADRÃO) ---
+        # Define os valores iniciais com base no padrão da classe
+        sigla_atual = self.sigla
+        universidade_atual = self.universidade
+        
+        # Verifica se a sigla EBAPE está presente no texto da página
+        # Isso cobre breadcrumbs, títulos, rodapés ou metadados visíveis
+        if "EBAPE" in soup.get_text().upper():
+            sigla_atual = "FGV-RJ"
+            universidade_atual = "Escola Brasileira de Administração Pública e de Empresas da Fundação Getúlio Vargas"
+            if on_progress: on_progress("FGV: Contexto EBAPE identificado. Ajustando dados da universidade.")
+
         data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
+            'sigla': sigla_atual,
+            'universidade': universidade_atual,
             'programa': '-',
             'link_pdf': '-'
         }
 
         if on_progress: on_progress("FGV: Analisando estrutura da página...")
 
-        # --- 1. EXTRAÇÃO DO PROGRAMA (Via Breadcrumb) ---
+        # --- 2. EXTRAÇÃO DO PROGRAMA (Via Breadcrumb) ---
         try:
             found_program = None
             
@@ -60,7 +73,7 @@ class FGVParser(BaseParser):
         except Exception as e:
             if on_progress: on_progress(f"FGV: Erro ao extrair programa: {str(e)[:20]}")
 
-        # --- 2. EXTRAÇÃO DO PDF ---
+        # --- 3. EXTRAÇÃO DO PDF ---
         try:
             if on_progress: on_progress("FGV: Buscando arquivo PDF...")
             
@@ -104,3 +117,5 @@ class FGVParser(BaseParser):
             if on_progress: on_progress(f"FGV: Erro PDF: {str(e)[:20]}")
 
         return data
+    
+    
