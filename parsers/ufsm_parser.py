@@ -1,99 +1,52 @@
 import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-from parsers.base_parser import BaseParser
+from parsers.dspace_jspui import DSpaceJSPUIParser
 
-class UFSMParser(BaseParser):
+class UfsmParser(DSpaceJSPUIParser):
     def __init__(self):
         super().__init__(sigla="UFSM", universidade="Universidade Federal de Santa Maria")
 
-    def extract_pure_soup(self, html_content, url, on_progress=None):
+    def _find_program(self, soup):
         """
-        Extrai dados do repositório da UFSM (DSpace).
-        Busca o programa na seção 'Coleções' ou Meta Tags e o PDF via metadados padrão.
+        Estratégia específica para UFSM (DSpace XMLUI).
+        Busca na seção de coleções (simple-item-view-collections) ou Meta Tags.
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
-            'programa': '-',
-            'link_pdf': '-'
-        }
-
-        if on_progress: on_progress("UFSM: Analisando estrutura da página...")
-
-        # --- 1. EXTRAÇÃO DO PROGRAMA ---
-        try:
-            found_program = None
-            
-            # Estratégia 1: Seção "Coleções" (Conforme exemplo fornecido)
-            # <div class="simple-item-view-collections ..."> ... <a ...>Programa de Pós-Graduação em Direito</a>
-            collection_links = soup.select('div.simple-item-view-collections ul.ds-referenceSet-list li a')
-            
-            for link in collection_links:
+        # 1. Estratégia: Seção "Coleções" (XMLUI Mirage)
+        # Ex: <div class="simple-item-view-collections">... <a ...>Programa de Pós-Graduação em Direito</a> ...</div>
+        collections_div = soup.find('div', class_='simple-item-view-collections')
+        if collections_div:
+            # Busca links dentro da lista de referência (padrão DSpace)
+            links = collections_div.select('ul.ds-referenceSet-list li a')
+            for link in links:
                 text = link.get_text(strip=True)
-                
                 if "Programa de Pós-Graduação" in text:
-                    # Remove "Programa de Pós-Graduação em/no/na" para sobrar apenas "Direito"
-                    clean_name = re.sub(
-                        r'.*Programa de Pós-Graduação\s*(em|no|na)?\s*', 
-                        '', 
-                        text, 
-                        flags=re.IGNORECASE
-                    )
-                    found_program = clean_name.strip()
-                    break
+                    return text
             
-            # Estratégia 2: Meta Tags (Fallback)
-            # A UFSM usa <meta name="DC.publisher" content="Programa de Pós-Graduação em Direito">
-            if not found_program:
-                meta_publishers = soup.find_all('meta', attrs={'name': 'DC.publisher'})
-                for meta in meta_publishers:
-                    content = meta.get('content', '')
-                    if "Programa de Pós-Graduação" in content:
-                        clean_name = re.sub(
-                            r'.*Programa de Pós-Graduação\s*(em|no|na)?\s*', 
-                            '', 
-                            content, 
-                            flags=re.IGNORECASE
-                        )
-                        found_program = clean_name.strip()
-                        break
+            # Fallback: Se não achar na lista específica, busca qualquer link na div
+            links = collections_div.find_all('a')
+            for link in links:
+                text = link.get_text(strip=True)
+                if "Programa de Pós-Graduação" in text:
+                    return text
 
-            if found_program:
-                data['programa'] = found_program
-                if on_progress: on_progress(f"UFSM: Programa identificado: {found_program}")
+        # 2. Estratégia: Meta Tag DC.publisher
+        # Ex: <meta name="DC.publisher" content="Programa de Pós-Graduação em Direito">
+        publishers = soup.find_all('meta', attrs={'name': 'DC.publisher'})
+        for meta in publishers:
+            content = meta.get('content', '')
+            if "Programa de Pós-Graduação" in content:
+                return content
 
-        except Exception as e:
-            if on_progress: on_progress(f"UFSM: Erro ao extrair programa: {str(e)[:20]}")
+        # 3. Fallback: Estratégias padrão da classe pai
+        return super()._find_program(soup)
 
-        # --- 2. EXTRAÇÃO DO PDF ---
-        try:
-            if on_progress: on_progress("UFSM: Buscando arquivo PDF...")
+    def _clean_program_name(self, raw):
+        """
+        Limpeza para garantir que removemos tudo antes de "Programa..." se houver lixo no texto.
+        """
+        # Remove qualquer texto que preceda "Programa de Pós-Graduação"
+        # Ex: "Manancial - Programa de Pós-Graduação em Educação" -> "Educação"
+        if "Programa de Pós-Graduação" in raw:
+            raw = re.sub(r'^.*?(?=Programa)', '', raw, flags=re.IGNORECASE)
             
-            pdf_url = None
-            
-            # Estratégia A: Meta Tag citation_pdf_url (Padrão e presente no HTML da UFSM)
-            pdf_meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
-            if pdf_meta:
-                pdf_url = pdf_meta.get('content')
-            
-            # Estratégia B: Link direto na tabela "Visualizar/Abrir"
-            if not pdf_url:
-                link_tag = soup.find('a', href=lambda h: h and 'bitstream' in h and h.lower().endswith('.pdf'))
-                if link_tag:
-                    pdf_url = link_tag['href']
-
-            if pdf_url:
-                # Garante URL absoluta
-                data['link_pdf'] = urljoin(url, pdf_url)
-                if on_progress: on_progress("UFSM: PDF localizado.")
-            else:
-                if on_progress: on_progress("UFSM: PDF não encontrado diretamente.")
-
-        except Exception as e:
-            if on_progress: on_progress(f"UFSM: Erro PDF: {str(e)[:20]}")
-
-        return data
-    
+        # Chama a limpeza padrão (remove "Programa de Pós-Graduação em", etc.)
+        return super()._clean_program_name(raw)

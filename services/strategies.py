@@ -133,14 +133,26 @@ class BDTDStrategy:
     def _fetch_university_data(self, resp_bdtd, on_progress=None):
         """
         Tenta encontrar o link do repositório original na página da BDTD.
+        Ignora links que contenham 'lattes'.
         """
         url_bdtd = resp_bdtd.url
         
+        # Validação para ignorar links Lattes
+        def is_valid(url):
+            return url and "lattes" not in url.lower()
+
         # Caso 1: Redirecionamento direto (URL já não é BDTD)
         if "bdtd.ibict.br" not in url_bdtd:
-            if on_progress: on_progress("Redirecionamento externo detectado.")
-            try: return self.download_page(url_bdtd, on_progress)
-            except: return url_bdtd, ""
+            if is_valid(url_bdtd):
+                if on_progress: on_progress("Redirecionamento externo detectado.")
+                try: return self.download_page(url_bdtd, on_progress)
+                except: return url_bdtd, ""
+            else:
+                # Se redirecionou para Lattes, consideramos que não serviu como repositório
+                if on_progress: on_progress("Redirecionamento para Lattes ignorado.")
+                # Continua para tentar analisar o HTML original se possível, 
+                # mas geralmente o 'resp_bdtd' já é o conteúdo do redirecionamento.
+                # Nesse caso, retornará a URL original da BDTD no final como fallback.
 
         # Caso 2: Analisar HTML para achar o link
         if on_progress: on_progress("Buscando link original na BDTD...")
@@ -149,16 +161,29 @@ class BDTDStrategy:
             found_link = None
             
             # Estratégia A: Tabela de metadados
+            # Varre cabeçalhos buscando termos chave
             for th in soup.find_all('th'):
                 if any(x in th.get_text() for x in ["Link de acesso", "Texto completo", "URI", "Online"]):
                     td = th.find_next_sibling('td')
-                    if td and td.find('a', href=True): 
-                        found_link = td.find('a')['href']; break
+                    if td:
+                        # Itera sobre TODOS os links da célula (para pular o Lattes se for o primeiro)
+                        for link in td.find_all('a', href=True):
+                            href = link['href']
+                            if is_valid(href):
+                                found_link = href
+                                break # Encontrou um link válido, para de procurar na célula
+                    if found_link: break # Encontrou na tabela, para de procurar linhas
             
             # Estratégia B: Botão Online (comum na interface nova)
             if not found_link:
                 access = soup.select_one('.onlineUrl')
-                if access and access.find('a', href=True): found_link = access.find('a')['href']
+                if access:
+                    # Itera sobre links dentro do botão/container
+                    for link in access.find_all('a', href=True):
+                        href = link['href']
+                        if is_valid(href):
+                            found_link = href
+                            break
 
             # Estratégia C: Varredura genérica em qualquer tabela
             if not found_link:
@@ -166,7 +191,10 @@ class BDTDStrategy:
                 if main_table:
                     for link in main_table.find_all('a', href=True):
                         href = link['href']
-                        if "bdtd.ibict.br" not in href and any(x in href for x in ['handle', 'bitstream', 'repositorio', '.br/']):
+                        # Filtros de domínio e palavras-chave + filtro Lattes
+                        if "bdtd.ibict.br" not in href and \
+                           any(x in href for x in ['handle', 'bitstream', 'repositorio', '.br/']) and \
+                           is_valid(href):
                             found_link = href
                             break
 
@@ -177,7 +205,7 @@ class BDTDStrategy:
             
             return url_bdtd, ""
         except: return url_bdtd, ""
-
+        
     def parse(self, soup, on_progress=None):
         """
         Processa a lista de resultados da busca na BDTD.

@@ -1,96 +1,48 @@
-import re
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from parsers.base_parser import BaseParser
+from parsers.dspace_jspui import DSpaceJSPUIParser
 
-class FiocruzParser(BaseParser):
+class FiocruzParser(DSpaceJSPUIParser):
     def __init__(self):
         super().__init__(sigla="FIOCRUZ", universidade="Fundação Oswaldo Cruz")
 
-    def extract_pure_soup(self, html_content, url, on_progress=None):
+    def _find_program(self, soup):
         """
-        Extrai dados do repositório da FIOCRUZ (Arca - DSpace 8.1).
-        Utiliza a estrutura de 'simple-view-element' para localizar o campo 'Programa'.
+        Estratégia específica para FIOCRUZ (DSpace 7/8).
+        Busca em blocos de metadados com classe 'simple-view-element' ou na seção de coleções.
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
-        
-        data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
-            'programa': '-',
-            'link_pdf': '-'
-        }
+        # 1. Busca na estrutura de metadados do DSpace 7/8
+        # Estrutura:
+        # <div class="simple-view-element">
+        #    <div class="simple-view-element-header">Programa</div>
+        #    <div class="simple-view-element-body">Saúde Pública</div>
+        # </div>
+        elements = soup.find_all('div', class_='simple-view-element')
+        for el in elements:
+            header = el.find(class_='simple-view-element-header')
+            if header and "Programa" in header.get_text():
+                body = el.find(class_='simple-view-element-body')
+                if body:
+                    return body.get_text(strip=True)
 
-        if on_progress: on_progress("FIOCRUZ: Analisando estrutura da página (DSpace 8)...")
+        # 2. Fallback: Busca na seção de coleções (comum em layouts customizados)
+        collection_divs = soup.find_all('div', class_='collections')
+        for div in collection_divs:
+            text = div.get_text(strip=True)
+            if "Programa" in text or "Mestrado" in text or "Doutorado" in text:
+                return text
 
-        # --- 1. EXTRAÇÃO DO PROGRAMA ---
-        try:
-            found_program = None
-            
-            # O DSpace 7/8 exibe metadados em blocos com a classe 'simple-view-element'
-            # Procuramos o bloco cujo cabeçalho ('simple-view-element-header') contenha "Programa"
-            elements = soup.find_all('div', class_='simple-view-element')
-            
-            for el in elements:
-                header = el.find(class_='simple-view-element-header')
-                if header and "Programa" in header.get_text():
-                    body = el.find(class_='simple-view-element-body')
-                    if body:
-                        found_program = body.get_text(strip=True)
-                        break
+        # 3. Fallback: Estratégias padrão da classe pai (Breadcrumbs, etc.)
+        return super()._find_program(soup)
 
-            # Fallback: Tenta pegar da coleção se o campo explícito não existir
-            if not found_program:
-                collection_divs = soup.find_all('div', class_='collections')
-                for div in collection_divs:
-                    text = div.get_text(strip=True)
-                    if "Programa" in text or "Mestrado" in text or "Doutorado" in text:
-                        found_program = text
-                        break
+    def _find_pdf(self, soup, base_url):
+        """
+        Sobrescreve busca de PDF para suportar links de download do DSpace 7/8.
+        """
+        # 1. Tenta encontrar links de download explícitos do DSpace moderno
+        # Ex: href=".../bitstreams/.../download"
+        dl_link = soup.find('a', href=lambda h: h and '/bitstreams/' in h and '/download' in h)
+        if dl_link:
+            return urljoin(base_url, dl_link['href'])
 
-            if found_program:
-                # Limpeza: remove "Programa de Pós-Graduação em"
-                # Ex: "Programa de Pós-Graduação em Saúde da Criança e da Mulher" -> "Saúde da Criança e da Mulher"
-                clean_name = re.sub(
-                    r'^(?:Programa de Pós-Graduação|Mestrado|Doutorado|Curso)(?:\s+(?:Profissional|Acadêmico))?(?: em| no| na)?\s*', 
-                    '', 
-                    found_program, 
-                    flags=re.IGNORECASE
-                )
-                
-                data['programa'] = clean_name.strip()
-                if on_progress: on_progress(f"FIOCRUZ: Programa identificado: {data['programa']}")
-
-        except Exception as e:
-            if on_progress: on_progress(f"FIOCRUZ: Erro ao extrair programa: {str(e)[:20]}")
-
-        # --- 2. EXTRAÇÃO DO PDF ---
-        try:
-            if on_progress: on_progress("FIOCRUZ: Buscando arquivo PDF...")
-            
-            pdf_url = None
-            
-            # Estratégia A: Meta Tag citation_pdf_url (Padrão DSpace)
-            pdf_meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
-            if pdf_meta:
-                pdf_url = pdf_meta.get('content')
-            
-            # Estratégia B: Link na seção de arquivos (DSpace 7/8 Angular)
-            # Procura links que contenham '/bitstreams/' e '/download'
-            if not pdf_url:
-                link_tag = soup.find('a', href=lambda h: h and '/bitstreams/' in h and '/download' in h)
-                if link_tag:
-                    pdf_url = link_tag['href']
-
-            if pdf_url:
-                # Garante URL absoluta
-                data['link_pdf'] = urljoin(url, pdf_url)
-                if on_progress: on_progress("FIOCRUZ: PDF localizado.")
-            else:
-                if on_progress: on_progress("FIOCRUZ: PDF não encontrado diretamente.")
-
-        except Exception as e:
-            if on_progress: on_progress(f"FIOCRUZ: Erro PDF: {str(e)[:20]}")
-
-        return data
-    
+        # 2. Fallback: Estratégias padrão (Meta tag citation_pdf_url, links bitstream genéricos)
+        return super()._find_pdf(soup, base_url)

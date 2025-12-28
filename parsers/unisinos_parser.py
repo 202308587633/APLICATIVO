@@ -1,91 +1,40 @@
 import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-from parsers.base_parser import BaseParser
+from parsers.dspace_jspui import DSpaceJSPUIParser
 
-class UnisinosParser(BaseParser):
+class UnisinosParser(DSpaceJSPUIParser):
     def __init__(self):
         super().__init__(sigla="UNISINOS", universidade="Universidade do Vale do Rio dos Sinos")
 
-    def extract_pure_soup(self, html_content, url, on_progress=None):
+    def _find_program(self, soup):
         """
-        Extrai dados do repositório da UNISINOS.
-        Identifica o programa via Breadcrumb procurando por 'PPG'.
+        Estratégia específica para UNISINOS (Interface XMLUI/Mirage).
+        Busca no breadcrumb (ul#ds-trail) por 'PPG' ou 'Programa'.
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        # 1. Busca no Breadcrumb específico (id="ds-trail")
+        # Itera sobre os links da trilha de navegação
+        crumbs = soup.select('ul#ds-trail li a')
         
-        data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
-            'programa': '-',
-            'link_pdf': '-'
-        }
-
-        if on_progress: on_progress("UNISINOS: Analisando estrutura da página...")
-
-        # --- 1. EXTRAÇÃO DO PROGRAMA (Via Breadcrumb com 'PPG') ---
-        try:
-            found_program = None
+        for crumb in crumbs:
+            text = crumb.get_text(strip=True)
             
-            # Seleciona os links dentro da lista de trilha (ds-trail)
-            crumbs = soup.select('ul#ds-trail li a')
-            
-            for crumb in crumbs:
-                text = crumb.get_text(strip=True)
-                
-                # Verifica se contém "PPG" ou "Programa de Pós-Graduação"
-                if "PPG" in text or "Programa de Pós-Graduação" in text:
-                    
-                    # Regex para remover o prefixo PPG e espaços extras
-                    # Ex: "PPG Direito da Empresa dos Negócios" -> "Direito da Empresa dos Negócios"
-                    clean_name = re.sub(
-                        r'^(PPG|Programa de Pós-Graduação\s*(em|no|na)?)\s+', 
-                        '', 
-                        text, 
-                        flags=re.IGNORECASE
-                    )
-                    
-                    found_program = clean_name.strip()
-                    break # Encontrou, para o loop
+            # Verifica se o texto contém indicativos de ser um programa
+            # A Unisinos usa muito a sigla "PPG" nos breadcrumbs
+            if "PPG" in text or "Programa" in text:
+                return text
+        
+        # 2. Fallback: Tenta as estratégias padrão da classe pai (Metadados DC, etc)
+        return super()._find_program(soup)
 
-            if found_program:
-                data['programa'] = found_program
-                if on_progress: on_progress(f"UNISINOS: Programa identificado: {found_program}")
-            else:
-                # Fallback: Tenta meta tags padrão
-                meta_prog = soup.find('meta', attrs={'name': 'citation_publisher'})
-                if meta_prog:
-                    data['programa'] = meta_prog.get('content')
-
-        except Exception as e:
-            if on_progress: on_progress(f"UNISINOS: Erro ao extrair programa: {str(e)[:20]}")
-
-        # --- 2. EXTRAÇÃO DO PDF ---
-        try:
-            if on_progress: on_progress("UNISINOS: Buscando arquivo PDF...")
-            
-            pdf_url = None
-            
-            # Estratégia A: Meta Tag citation_pdf_url
-            pdf_meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
-            if pdf_meta:
-                pdf_url = pdf_meta.get('content')
-            
-            # Estratégia B: Link com 'bitstream'
-            if not pdf_url:
-                link_tag = soup.find('a', href=lambda h: h and 'bitstream' in h and h.lower().endswith('.pdf'))
-                if link_tag:
-                    pdf_url = link_tag['href']
-
-            if pdf_url:
-                data['link_pdf'] = urljoin(url, pdf_url)
-                if on_progress: on_progress("UNISINOS: PDF localizado.")
-            else:
-                if on_progress: on_progress("UNISINOS: PDF não encontrado diretamente.")
-
-        except Exception as e:
-            if on_progress: on_progress(f"UNISINOS: Erro PDF: {str(e)[:20]}")
-
-        return data
-    
-    
+    def _clean_program_name(self, raw):
+        """
+        Limpeza específica para remover o prefixo 'PPG' comum na Unisinos,
+        antes de passar para a limpeza padrão.
+        Ex entrada: "PPG em Direito da Empresa"
+        Ex saída: "Direito da Empresa"
+        """
+        # Remove o prefixo "PPG" se aparecer no início
+        # O regex cuida de "PPG " ou "PPG em " (o 'em' será pego no super também, mas garante aqui)
+        clean = re.sub(r'^PPG\s+(?:em\s+|no\s+|na\s+)?', '', raw, flags=re.IGNORECASE)
+        
+        # Chama a limpeza padrão (que remove "Programa de Pós-Graduação", parênteses finais, etc.)
+        return super()._clean_program_name(clean)

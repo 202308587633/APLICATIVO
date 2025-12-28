@@ -1,89 +1,40 @@
 import re
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-from parsers.base_parser import BaseParser
+from parsers.dspace_jspui import DSpaceJSPUIParser
 
-class UFPELParser(BaseParser):
+class UfpelParser(DSpaceJSPUIParser):
     def __init__(self):
         super().__init__(sigla="UFPEL", universidade="Universidade Federal de Pelotas")
 
-    def extract_pure_soup(self, html_content, url, on_progress=None):
+    def _find_program(self, soup):
         """
-        Extrai dados do repositório da UFPEL (DSpace 6.4 / Mirage2).
-        Foca nos breadcrumbs para o Programa e meta tags para o PDF.
+        Estratégia específica para UFPEL (Guaiaca).
+        Prioriza Meta Tags e labels específicos na tabela de metadados.
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        # 1. Busca por Meta Tags (DC.publisher)
+        # O Guaiaca costuma preencher este campo com o nome do programa.
+        publishers = soup.find_all('meta', attrs={'name': 'DC.publisher'})
+        for meta in publishers:
+            content = meta.get('content', '')
+            # Filtra para garantir que é um programa e não apenas o nome da universidade
+            if "Programa" in content or "Pós-Graduação" in content:
+                return content
+
+        # 2. Busca por label explícito na tabela de metadados
+        # Ex: "Programa de Pós-Graduação:"
+        prog = self._try_metadata_table_label(soup, label_pattern=r'^Programa')
+        if prog:
+            return prog
+
+        # 3. Fallback: Estratégias padrão da classe pai (Coleções, Breadcrumbs)
+        return super()._find_program(soup)
+
+    def _clean_program_name(self, raw):
+        """
+        Limpeza específica para UFPEL.
+        """
+        # Remove prefixo institucional que às vezes aparece concatenado
+        # Ex: "Universidade Federal de Pelotas. Programa de Pós-Graduação em..."
+        clean = re.sub(r'^Universidade Federal de Pelotas[.,-]?\s*', '', raw, flags=re.IGNORECASE)
         
-        data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
-            'programa': '-',
-            'link_pdf': '-'
-        }
-
-        if on_progress: on_progress("UFPEL: Analisando estrutura da página...")
-
-        # --- 1. EXTRAÇÃO DO PROGRAMA ---
-        try:
-            found_program = None
-            
-            # O repositório UFPEL organiza a hierarquia nos breadcrumbs (visíveis ou no menu dropdown mobile)
-            # Exemplo: <a ...>Pós-Graduação em Direito - PPGD</a>
-            
-            # Seleciona links tanto do breadcrumb desktop quanto do menu mobile
-            crumbs = soup.select('.breadcrumb li a, .dropdown-menu li a')
-            
-            for crumb in crumbs:
-                text = crumb.get_text(strip=True)
-                
-                # Procura por "Pós-Graduação"
-                if "Pós-Graduação" in text:
-                    # Regex para limpar o nome
-                    # Captura o que vem depois de "em" e antes de um hífen opcional ou fim da string
-                    match = re.search(r'Pós-Graduação\s*(?:em|no|na)?\s+(.*?)(?:\s+-\s+|$)', text, re.IGNORECASE)
-                    
-                    if match:
-                        found_program = match.group(1).strip()
-                        # Remove a sigla se ela tiver ficado no final (ex: "Direito PPGD")
-                        found_program = re.sub(r'\s+[A-Z0-9]+$', '', found_program)
-                        break
-                    else:
-                        # Fallback simples se o regex falhar mas for a linha correta
-                        found_program = text.replace("Pós-Graduação em", "").replace("- PPGD", "").strip()
-
-            if found_program:
-                data['programa'] = found_program
-                if on_progress: on_progress(f"UFPEL: Programa identificado: {found_program}")
-
-        except Exception as e:
-            if on_progress: on_progress(f"UFPEL: Erro ao extrair programa: {str(e)[:20]}")
-
-        # --- 2. EXTRAÇÃO DO PDF ---
-        try:
-            if on_progress: on_progress("UFPEL: Buscando arquivo PDF...")
-            
-            pdf_url = None
-            
-            # Estratégia A: Meta Tag citation_pdf_url (Presente no HTML fornecido)
-            pdf_meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
-            if pdf_meta:
-                pdf_url = pdf_meta.get('content')
-            
-            # Estratégia B: Link na seção "Visualizar/Abrir"
-            if not pdf_url:
-                # Procura links que contenham 'bitstream' e terminem em .pdf
-                link_tag = soup.find('a', href=lambda h: h and 'bitstream' in h and h.lower().endswith('.pdf'))
-                if link_tag:
-                    pdf_url = link_tag['href']
-
-            if pdf_url:
-                # Garante URL absoluta
-                data['link_pdf'] = urljoin(url, pdf_url)
-                if on_progress: on_progress("UFPEL: PDF localizado.")
-            else:
-                if on_progress: on_progress("UFPEL: PDF não encontrado diretamente.")
-
-        except Exception as e:
-            if on_progress: on_progress(f"UFPEL: Erro PDF: {str(e)[:20]}")
-
-        return data
+        # Chama a limpeza padrão (que remove "Programa de Pós-Graduação em", etc.)
+        return super()._clean_program_name(clean)

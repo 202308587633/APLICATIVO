@@ -1,106 +1,60 @@
 import re
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from parsers.base_parser import BaseParser
+from parsers.dspace_jspui import DSpaceJSPUIParser
 
-class UCBParser(BaseParser):
+class UcbParser(DSpaceJSPUIParser):
     def __init__(self):
         super().__init__(sigla="UCB", universidade="Universidade Católica de Brasília")
 
-    def extract_pure_soup(self, html_content, url, on_progress=None):
+    def _find_program(self, soup):
         """
-        Extrai dados do repositório da UCB (JSPUI).
-        Baseado no exemplo da UFOP, mas ajustado para as tags da UCB.
+        Estratégia específica para UCB.
+        Foca em Breadcrumbs com termos específicos ("Stricto Sensu") e Meta Tags.
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        # 1. Busca nos Breadcrumbs (ol.breadcrumb)
+        # A UCB usa termos como "Programa Stricto Sensu em..." que o parser padrão pode não pegar com precisão
+        crumbs = soup.select('ol.breadcrumb li a')
+        for crumb in crumbs:
+            text = crumb.get_text(strip=True)
+            # Verifica se contém "Programa" E ("Pós-Graduação" OU "Stricto Sensu")
+            if "Programa" in text and ("Pós-Graduação" in text or "Stricto Sensu" in text):
+                return text
+
+        # 2. Fallback: Meta Tag DC.publisher
+        meta_pub = soup.find('meta', attrs={'name': 'DC.publisher'})
+        if meta_pub:
+            content = meta_pub.get('content', '')
+            if "Programa" in content:
+                return content
+
+        # 3. Fallback: Estratégias padrão da classe pai
+        return super()._find_program(soup)
+
+    def _clean_program_name(self, raw):
+        """
+        Limpeza específica para remover "Programa Stricto Sensu" antes da limpeza padrão.
+        """
+        # Remove "Programa Stricto Sensu" (termo específico da UCB)
+        clean = re.sub(r'Programa Stricto Sensu\s*(?:em|no|na)?\s*', '', raw, flags=re.IGNORECASE)
         
-        data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
-            'programa': '-',
-            'link_pdf': '-'
-        }
+        # Chama a limpeza padrão (que remove "Programa de Pós-Graduação", parênteses, etc.)
+        return super()._clean_program_name(clean)
 
-        if on_progress: on_progress("UCB: Analisando HTML...")
+    def _find_pdf(self, soup, base_url):
+        """
+        Sobrescreve busca de PDF para priorizar botões específicos da interface UCB.
+        """
+        # 1. Busca por link com texto "Baixar/Abrir" (Padrão visual da UCB)
+        link_text = soup.find('a', string=re.compile(r'Baixar/Abrir', re.I))
+        if link_text and link_text.get('href'):
+            return urljoin(base_url, link_text['href'])
 
-        # --- 1. EXTRAÇÃO DO PROGRAMA (Via Breadcrumb) ---
-        try:
-            found_program = None
-            
-            # Seleciona os links dentro da lista de navegação (breadcrumb)
-            # Ex: <ol class="breadcrumb btn-success"><li><a>Programa...</a></li></ol>
-            crumbs = soup.select('ol.breadcrumb li a')
-            
-            for crumb in crumbs:
-                text = crumb.get_text(strip=True)
-                
-                # Verifica se é o item que contém o nome do programa
-                # Aceita "Programa de Pós-Graduação" e "Programa Stricto Sensu"
-                if "Programa" in text and ("Pós-Graduação" in text or "Stricto Sensu" in text):
-                    
-                    # Regex cirúrgico para limpar o prefixo e as preposições
-                    # Transforma "Programa de Pós-Graduação em Direito" -> "Direito"
-                    clean_name = re.sub(
-                        r'^(Programa de Pós-Graduação|Programa Stricto Sensu)\s*(em|no|na)?\s+', 
-                        '', 
-                        text, 
-                        flags=re.IGNORECASE
-                    )
-                    found_program = clean_name.strip()
-                    break 
-            
-            if found_program:
-                data['programa'] = found_program
-                if on_progress: on_progress(f"UCB: Programa identificado: {found_program}")
-            else:
-                # Fallback: Tenta meta tag se o breadcrumb falhar
-                meta_prog = soup.find('meta', attrs={'name': 'DC.publisher'})
-                if meta_prog:
-                    content = meta_prog.get('content', '')
-                    if "Programa" in content:
-                         clean_name = re.sub(r'^(Programa.*?)\s*(em|no|na)?\s+', '', content, flags=re.IGNORECASE)
-                         data['programa'] = clean_name.strip()
+        # 2. Busca por botão verde (classe btn-success) que aponte para PDF/Bitstream
+        btn_link = soup.find('a', class_='btn-success', href=True)
+        if btn_link:
+            href = btn_link['href']
+            if 'bitstream' in href or href.lower().endswith('.pdf'):
+                return urljoin(base_url, href)
 
-        except Exception as e:
-            if on_progress: on_progress(f"UCB: Erro ao extrair programa: {str(e)[:20]}")
-
-        # --- 2. EXTRAÇÃO DO PDF ---
-        try:
-            if on_progress: on_progress("UCB: Buscando PDF...")
-            
-            pdf_url = None
-            
-            # ESTRATÉGIA A (Solicitada): Link com texto "Baixar/Abrir"
-            # Varre todos os links procurando esse texto específico
-            links = soup.find_all('a', href=True)
-            for link in links:
-                if "Baixar/Abrir" in link.get_text():
-                    pdf_url = link['href']
-                    break
-            
-            # ESTRATÉGIA B: Botão verde (btn-success) que aponta para um bitstream/pdf
-            if not pdf_url:
-                # Procura links com a classe específica do botão de download da UCB
-                btn_link = soup.find('a', class_='btn-success', href=True)
-                if btn_link:
-                    href = btn_link['href']
-                    if 'bitstream' in href or href.lower().endswith('.pdf'):
-                        pdf_url = href
-
-            # ESTRATÉGIA C: Meta Tag Padrão (Fallback)
-            if not pdf_url:
-                meta_pdf = soup.find('meta', attrs={'name': 'citation_pdf_url'})
-                if meta_pdf:
-                    pdf_url = meta_pdf.get('content')
-
-            if pdf_url:
-                # Garante que o link seja absoluto (adiciona https://bdtd.ucb.br...)
-                data['link_pdf'] = urljoin(url, pdf_url)
-                if on_progress: on_progress("UCB: PDF localizado.")
-            else:
-                if on_progress: on_progress("UCB: PDF não encontrado.")
-
-        except Exception as e:
-            if on_progress: on_progress(f"UCB: Erro PDF: {str(e)[:20]}")
-
-        return data
+        # 3. Fallback padrão (Meta tags citation_pdf_url, links bitstream genéricos)
+        return super()._find_pdf(soup, base_url)
