@@ -174,18 +174,6 @@ class ScraperDB:
         with self._get_connection() as conn:
             return conn.execute(query).fetchall()
 
-    def get_all_programs(self):
-        """Retorna todos os programas de pós-graduação cadastrados."""
-        try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
-                # Busca da tabela correta: programas_pos
-                cursor.execute("SELECT * FROM programas_pos ORDER BY nome_programa ASC")
-                return cursor.fetchall()
-        except Exception as e:
-            print(f"Erro ao buscar programas: {e}")
-            return []
-
     def save_program(self, data_tuple):
         """Salva ou atualiza um programa de pós-graduação."""
         query = '''
@@ -196,3 +184,38 @@ class ScraperDB:
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         '''
         self.execute_query(query, data_tuple)
+        
+        
+    def get_all_programs(self):
+        """
+        Retorna todos os programas de pós-graduação com a contagem de trabalhos vinculados.
+        A contagem é feita comparando 'sigla_ies' (Programas) com 'sigla' (Trabalhos).
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Query ajustada para incluir a coluna de contagem
+                query = '''
+                    SELECT 
+                        p.codigo_programa, 
+                        p.nome_programa, 
+                        p.sigla_ies, 
+                        p.grau_academico, 
+                        p.modalidade, 
+                        p.nota_programa, 
+                        p.situacao_programa, 
+                        p.forma_associativa, 
+                        p.area_avaliacao, 
+                        p.area_conhecimento, 
+                        p.grande_area_conhecimento,
+                        (SELECT COUNT(*) FROM trabalhos t WHERE t.sigla = p.sigla_ies) as qtd_trabalhos
+                    FROM programas_pos p 
+                    ORDER BY p.nome_programa ASC
+                '''
+                
+                cursor.execute(query)
+                return cursor.fetchall()
+        except Exception as e:
+            print(f"Erro ao buscar programas: {e}")
+            return []

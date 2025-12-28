@@ -195,36 +195,6 @@ class ScraperView:
         self.menu_clear.add_command(label="Apagar HTML Repositório", command=lambda: self._trigger_item_action('delete', 'repo'))
         self.context_menu.add_cascade(label="Limpar / Apagar", menu=self.menu_clear)
 
-    def _setup_programs_tab(self):
-        """Monta a tabela de programas na segunda aba."""
-        filter_frame = ttk.Frame(self.tab_programs)
-        filter_frame.pack(fill='x', padx=10, pady=5)
-        
-        ttk.Label(filter_frame, text="Total de Registros:").pack(side='left')
-        self.lbl_total_progs = ttk.Label(filter_frame, text="0")
-        self.lbl_total_progs.pack(side='left', padx=5)
-
-        tree_frame = ttk.Frame(self.tab_programs)
-        tree_frame.pack(fill='both', expand=True, padx=10, pady=5)
-
-        cols = ("Código", "Programa", "Sigla IES", "Grau", "Modalidade", "Nota", "Situação", "Associativa", "Área Aval.", "Área Conec.", "Grande Área")
-        self.prog_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', selectmode='browse')
-        
-        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.prog_tree.yview)
-        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.prog_tree.xview)
-        self.prog_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        vsb.pack(side='right', fill='y')
-        hsb.pack(side='bottom', fill='x')
-        self.prog_tree.pack(fill='both', expand=True)
-
-        col_widths = [100, 300, 80, 100, 100, 50, 100, 50, 150, 150, 150]
-        for i, col in enumerate(cols):
-            self.prog_tree.heading(col, text=col, command=lambda c=col: self._sort_treeview(self.prog_tree, c, False))
-            self.prog_tree.column(col, width=col_widths[i], minwidth=50)
-
-    # --- MÉTODOS QUE ESTAVAM FALTANDO ---
-
     def _create_filter_widgets(self):
         """Cria os checkboxes para filtros."""
         frame_cb = ttk.Frame(self.filter_frame)
@@ -451,3 +421,49 @@ class ScraperView:
         self.all_data = [] 
         for item in self.tree.get_children():
             self.tree.delete(item)
+            
+            
+#################
+
+    def _setup_programs_tab(self):
+        """Monta a tabela de programas na segunda aba com a nova coluna de contagem."""
+        filter_frame = ttk.Frame(self.tab_programs)
+        filter_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Label(filter_frame, text="Total de Registros:").pack(side='left')
+        self.lbl_total_progs = ttk.Label(filter_frame, text="0")
+        self.lbl_total_progs.pack(side='left', padx=5)
+
+        tree_frame = ttk.Frame(self.tab_programs)
+        tree_frame.pack(fill='both', expand=True, padx=10, pady=5)
+
+        # Definição das Colunas (Adicionado "Qtd. Trabalhos" ao final)
+        cols = (
+            "Código", "Programa", "Sigla IES", "Grau", 
+            "Modalidade", "Nota", "Situação", "Associativa", 
+            "Área Aval.", "Área Conec.", "Grande Área", "Qtd. Trabalhos"
+        )
+
+        self.prog_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', selectmode='browse')
+        
+        # Scrollbars
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.prog_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.prog_tree.xview)
+        self.prog_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        vsb.pack(side='right', fill='y')
+        hsb.pack(side='bottom', fill='x')
+        self.prog_tree.pack(fill='both', expand=True)
+
+        # Configuração das Colunas (Larguras e Ordenação)
+        # Ajustei as larguras para acomodar a nova coluna
+        col_widths = [80, 250, 70, 90, 90, 40, 90, 40, 120, 120, 120, 80]
+        
+        for i, col in enumerate(cols):
+            self.prog_tree.heading(
+                col, 
+                text=col, 
+                command=lambda c=col: self._sort_treeview(self.prog_tree, c, False)
+            )
+            # Define largura mínima e padrão
+            self.prog_tree.column(col, width=col_widths[i], minwidth=40, anchor="center" if i in [0,2,5,7,11] else "w")
