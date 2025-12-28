@@ -19,6 +19,12 @@ from parsers.uninove_parser import UninoveParser
 from parsers.usp_parser import USPParser
 from parsers.ufgd_parser import UFGDParser
 from parsers.uff_parser import UFFParser
+from parsers.pucgoias_parser import PUCGOIASParser
+from parsers.ufrr_parser import UFRRParser
+from parsers.unifesp_parser import UNIFESPParser
+from parsers.unifacs_parser import UNIFACSParser
+from parsers.uel_parser import UELParser
+from parsers.ifro_parser import IFROParser
 
 class ParserFactory:
     def __init__(self):
@@ -55,6 +61,19 @@ class ParserFactory:
             "app.uff.br": UFFParser,
             "riuff": UFFParser,
             "uff.br": UFFParser,
+            "pucgoias.edu.br": PUCGOIASParser,
+            "tede2.pucgoias.edu.br": PUCGOIASParser,
+            "repositorio.ufrr.br": UFRRParser,
+            "ufrr.br": UFRRParser,            
+            "repositorio.unifesp.br": UNIFESPParser,
+            "unifesp.br": UNIFESPParser,
+            "hdl.handle.net/11600": UNIFESPParser, # Prefixo Handle da UNIFESP
+            "deposita.ibict.br": UNIFACSParser, # Mapeia o repositório compartilhado
+            "unifacs.br": UNIFACSParser,        # Caso usem domínio próprio
+            "repositorio.uel.br": UELParser,
+            "uel.br": UELParser,
+            "repositorio.ifro.edu.br": IFROParser,
+            "ifro.edu.br": IFROParser,
         }
 
     def get_parser(self, url):
