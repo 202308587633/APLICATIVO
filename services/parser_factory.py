@@ -1,7 +1,6 @@
 # services/parser_factory.py
 
 from parsers.generic_parser import GenericParser
-# Importe APENAS os parsers que você já refatorou ou criou
 from parsers.ufop_parser import UFOPParser
 from parsers.ufms_parser import UFMSParser
 from parsers.ufscar_parser import UFSCARParser
@@ -14,7 +13,12 @@ from parsers.ucsal_parser import UCSALParser
 from parsers.unipampa_parser import UNIPAMPAParser
 from parsers.fgv_parser import FGVParser
 from parsers.unisantos_parser import UNISANTOSParser
-# ... importe os outros parsers à medida que você os cria/refatora
+from parsers.unifal_parser import UNIFALParser
+from parsers.fdv_parser import FDVParser
+from parsers.uninove_parser import UninoveParser
+from parsers.usp_parser import USPParser
+from parsers.ufgd_parser import UFGDParser
+from parsers.uff_parser import UFFParser
 
 class ParserFactory:
     def __init__(self):
@@ -32,13 +36,25 @@ class ParserFactory:
             "ucsal.br": UCSALParser,
             "unipampa.edu.br": UNIPAMPAParser,
             "fgv.br": FGVParser,
-            
-            # Adicione aqui os mapeamentos extras de URL se necessário
             "repositorio.ufms.br": UFMSParser,
             "rima.ufrrj.br": UFRRJParser,
             "tede.unioeste.br": UNIOESTEParser,
             "tede.unisantos.br": UNISANTOSParser,
             "unisantos.br": UNISANTOSParser,
+            "repositorio.unifal-mg.edu.br": UNIFALParser,
+            "unifal-mg.edu.br": UNIFALParser,
+            "fdv.br": FDVParser,          # Caso usem o domínio nominal
+            "191.252.194.60": FDVParser,  # Para capturar o link do exemplo (IP)
+            "/fdv/": FDVParser,
+            "uninove.br": UninoveParser,
+            "bibliotecatede.uninove.br": UninoveParser,
+            "teses.usp.br": USPParser,
+            "usp.br": USPParser,
+            "repositorio.ufgd.edu.br": UFGDParser,
+            "ufgd.edu.br": UFGDParser,
+            "app.uff.br": UFFParser,
+            "riuff": UFFParser,
+            "uff.br": UFFParser,
         }
 
     def get_parser(self, url):

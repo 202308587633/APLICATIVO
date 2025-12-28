@@ -9,8 +9,8 @@ class USPParser(BaseParser):
 
     def extract_pure_soup(self, html_content, url, on_progress=None):
         """
-        Extrai dados do repositório da USP.
-        Lógica ajustada para encontrar o Programa após 'Unidade da USP' e limpar o nome.
+        Extrai dados do repositório da USP (teses.usp.br).
+        Utiliza Meta Tags Dublin Core como fonte primária e estrutura de DIVs como fallback.
         """
         soup = BeautifulSoup(html_content, 'html.parser')
         
@@ -21,80 +21,72 @@ class USPParser(BaseParser):
             'link_pdf': '-'
         }
 
-        if on_progress: on_progress("USP: Analisando HTML...")
+        if on_progress: on_progress("USP: Analisando metadados...")
 
         # --- 1. EXTRAÇÃO DO PROGRAMA ---
+        found_program = None
+
+        # Estratégia A: Meta Tag DC.publisher.program (Muito confiável na USP)
+        # Ex: <meta name="dc.publisher.program" content="Semiótica e Lingüística Geral">
         try:
-            found_program = None
-            
-            # ESTRATÉGIA PRINCIPAL: Procura pelo texto exato "Unidade da USP"
-            # O HTML tem: <div class="DocumentoTituloTexto">Unidade da USP</div>
-            label_node = soup.find(string=lambda t: t and "Unidade da USP" in t)
-            
-            if label_node:
-                # O nó de texto está dentro de uma DIV. Pegamos o pai (a div do título)
-                label_div = label_node.parent
-                
-                # O valor está na próxima DIV irmã
-                value_div = label_div.find_next_sibling('div')
-                
-                if value_div:
-                    found_program = value_div.get_text(strip=True)
+            meta_prog = soup.find('meta', attrs={'name': 'dc.publisher.program'})
+            if meta_prog:
+                found_program = meta_prog.get('content')
+        except: pass
 
-            # Fallback 1: Se não achou pela Unidade, tenta meta tag específica do programa
-            if not found_program:
-                meta_prog = soup.find('meta', attrs={'name': 'dc.publisher.program'})
-                if meta_prog:
-                    found_program = meta_prog.get('content')
+        # Estratégia B: Visual (Área do Conhecimento)
+        # Procura a div com título "Área do Conhecimento" e pega a próxima div de texto
+        if not found_program:
+            try:
+                # <div class="DocumentoTituloTexto">Área do Conhecimento</div>
+                label_div = soup.find('div', class_='DocumentoTituloTexto', string=re.compile(r'Área do Conhecimento', re.I))
+                if label_div:
+                    # A div com o valor vem logo em seguida: <div class="DocumentoTexto">...</div>
+                    value_div = label_div.find_next_sibling('div', class_='DocumentoTexto')
+                    if value_div:
+                        found_program = value_div.get_text(strip=True)
+            except Exception as e:
+                if on_progress: on_progress(f"USP: Erro visual programa: {e}")
 
-            # Fallback 2: Meta tag citation_publisher
-            if not found_program:
-                meta_pub = soup.find('meta', attrs={'name': 'citation_publisher'})
-                if meta_pub:
-                    content = meta_pub.get('content', '')
-                    if "Programa" in content or "Faculdade" in content:
-                        found_program = content
-
-            # --- LIMPEZA E TRATAMENTO FINAL ---
-            if found_program:
-                # Remove "Faculdade de "
-                clean_name = found_program.replace("Faculdade de ", "")
-                
-                # Remove "de Ribeirão Preto" (Nova solicitação)
-                clean_name = clean_name.replace("de Ribeirão Preto", "")
-                
-                # Remove espaços extras no início/fim
-                data['programa'] = clean_name.strip()
-                
-                if on_progress: on_progress(f"USP: Programa identificado: {data['programa']}")
-
-        except Exception as e:
-            if on_progress: on_progress(f"USP: Erro ao extrair programa: {str(e)[:20]}")
+        if found_program:
+            data['programa'] = found_program.strip()
+            if on_progress: on_progress(f"USP: Programa detectado: {data['programa']}")
+        else:
+            if on_progress: on_progress("USP: Programa não identificado.")
 
         # --- 2. EXTRAÇÃO DO PDF ---
         try:
-            if on_progress: on_progress("USP: Buscando PDF...")
-            
             pdf_url = None
             
-            # Prioridade: Meta Tag 'citation_pdf_url'
+            # Estratégia A: Meta Tag citation_pdf_url (Padrão Google Scholar)
+            # <meta name="citation_pdf_url" content="...">
             pdf_meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
             if pdf_meta:
                 pdf_url = pdf_meta.get('content')
 
-            # Fallback: Links com 'bitstream' ou 'download'
+            # Estratégia B: Link direto na classe "DocumentoTituloTexto2"
+            # O layout da USP costuma colocar o link do PDF dentro dessa classe específica
             if not pdf_url:
-                link_tag = soup.find('a', href=lambda h: h and ('bitstream' in h or 'download' in h) and h.lower().endswith('.pdf'))
-                if link_tag:
-                    pdf_url = link_tag['href']
+                div_pdf = soup.find('div', class_='DocumentoTituloTexto2')
+                if div_pdf:
+                    link = div_pdf.find('a', href=re.compile(r'\.pdf$', re.I))
+                    if link:
+                        pdf_url = link['href']
+
+            # Estratégia C: Varredura Genérica
+            if not pdf_url:
+                link = soup.find('a', href=re.compile(r'bitstream.*\.pdf$|/publico/.*\.pdf$', re.I))
+                if link:
+                    pdf_url = link['href']
 
             if pdf_url:
+                # Garante URL absoluta (USP às vezes usa links relativos ou http misto)
                 data['link_pdf'] = urljoin(url, pdf_url)
                 if on_progress: on_progress("USP: PDF localizado.")
             else:
-                if on_progress: on_progress("USP: PDF público não encontrado.")
+                if on_progress: on_progress("USP: PDF não encontrado.")
 
         except Exception as e:
-            if on_progress: on_progress(f"USP: Erro PDF: {str(e)[:20]}")
+            if on_progress: on_progress(f"USP: Erro PDF: {e}")
 
         return data

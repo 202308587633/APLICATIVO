@@ -187,13 +187,6 @@ class ScraperView:
         self.btn_run.config(state="disabled" if is_running else "normal")
         self.btn_stop.config(state="normal" if is_running else "disabled")
 
-    def update_row_by_id(self, db_id, s, u, p, pdf):
-        for item in self.tree.get_children():
-            if str(self.tree.item(item, 'values')[0]) == str(db_id):
-                v = list(self.tree.item(item, 'values'))
-                v[4], v[5], v[6], v[7] = s, u, p, pdf
-                self.tree.item(item, values=tuple(v)); break
-
     def open_browser(self, url):
         if url and url.startswith("http"): webbrowser.open_new_tab(url)
 
@@ -437,3 +430,32 @@ class ScraperView:
     def _apply_filters(self):
         """Redireciona para o novo método centralizado."""
         self._refresh_table_view()
+
+
+##################
+
+
+    def update_row_by_id(self, db_id, s, u, p, pdf):
+        """
+        Atualiza uma linha específica na tabela e no cache de dados.
+        Corrige os índices devido à inclusão da coluna 'Ano'.
+        """
+        # 1. Atualiza visualmente na Treeview
+        for item in self.tree.get_children():
+            # O ID está na coluna 0
+            if str(self.tree.item(item, 'values')[0]) == str(db_id):
+                v = list(self.tree.item(item, 'values'))
+                
+                # Índices Corretos:
+                # 0:id, 1:termo, 2:ano, 3:titulo, 4:autor
+                # 5:sigla, 6:univ, 7:prog, 8:pdf
+                
+                v[5] = s   # Sigla
+                v[6] = u   # Universidade
+                v[7] = p   # Programa
+                v[8] = pdf # Link PDF
+                
+                self.tree.item(item, values=tuple(v))
+                break
+        
+        # 2. Atualiza

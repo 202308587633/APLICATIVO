@@ -492,43 +492,6 @@ class ScraperController:
         except queue.Empty: pass
         finally: self.root.after(100, self.check_queue)
         
-    def manage_field(self, db_id, field_type):
-        """Limpa campos no banco e atualiza imediatamente a interface."""
-        try:
-            self.db.clear_field(db_id, field_type)
-            
-            # Busca o item na Treeview para atualizar visualmente
-            items = self.view.tree.get_children()
-            target_item = None
-            for item in items:
-                # Compara o ID (primeira coluna)
-                if str(self.view.tree.item(item, 'values')[0]) == str(db_id):
-                    target_item = item
-                    break
-            
-            if target_item:
-                vals = list(self.view.tree.item(target_item, 'values'))
-                
-                # ATUALIZAÇÃO DOS ÍNDICES (Deslocamento +1 devido à coluna Ano)
-                # 0:id, 1:termo, 2:ano, 3:titulo, 4:autor
-                # 5:sigla, 6:univ, 7:prog, 8:pdf, 9:repo, 10:bdtd
-                
-                if field_type == 'extracted_data':
-                    vals[5] = '-' # Sigla
-                    vals[6] = '-' # Universidade
-                    vals[7] = '-' # Programa
-                elif field_type == 'link_pdf':
-                    vals[8] = '-' # Coluna PDF
-                elif field_type == 'link_repo':
-                    vals[9] = '-' # Coluna Repo
-                
-                # Aplica os novos valores na linha
-                self.view.tree.item(target_item, values=tuple(vals))
-            
-            self.view.update_status(f"Limpo com sucesso: {field_type}")
-        except Exception as e:
-            self.view.update_status(f"Erro ao limpar {field_type}: {e}")
-            
     def _update_treeview_sigla(self, db_id, nova_sigla):
         """
         Função auxiliar interna para atualizar a linha específica da tabela.
@@ -560,5 +523,42 @@ class ScraperController:
                 
         except Exception as e:
             self.view.update_status(f"Erro visual ao atualizar sigla: {e}")
-            
     
+    def manage_field(self, db_id, field_type):
+        """Limpa campos no banco e atualiza imediatamente a interface."""
+        try:
+            self.db.clear_field(db_id, field_type)
+            
+            # Busca o item na Treeview para atualizar visualmente
+            items = self.view.tree.get_children()
+            target_item = None
+            for item in items:
+                if str(self.view.tree.item(item, 'values')[0]) == str(db_id):
+                    target_item = item
+                    break
+            
+            if target_item:
+                vals = list(self.view.tree.item(target_item, 'values'))
+                
+                # ATUALIZAÇÃO DOS ÍNDICES (Confirmando):
+                # 0:id, 1:termo, 2:ano, 3:titulo, 4:autor
+                # 5:sigla, 6:univ, 7:prog, 8:pdf, 9:repo, 10:bdtd
+                
+                if field_type == 'extracted_data':
+                    vals[5] = '-' # Sigla (Índice 5)
+                    vals[6] = '-' # Universidade (Índice 6)
+                    vals[7] = '-' # Programa (Índice 7)
+                elif field_type == 'link_pdf':
+                    vals[8] = '-' # Coluna PDF (Índice 8)
+                elif field_type == 'link_repo':
+                    vals[9] = '-' # Coluna Repo (Índice 9)
+                
+                # Aplica os novos valores na linha
+                self.view.tree.item(target_item, values=tuple(vals))
+                
+                # Atualiza também o cache da view para persistência visual
+                self.view.update_row_by_id(db_id, vals[5], vals[6], vals[7], vals[8])
+            
+            self.view.update_status(f"Limpo com sucesso: {field_type}")
+        except Exception as e:
+            self.view.update_status(f"Erro ao limpar {field_type}: {e}")
