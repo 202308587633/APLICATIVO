@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import webbrowser
 from tkinter.scrolledtext import ScrolledText 
 import datetime
@@ -7,10 +7,14 @@ import datetime
 class ScraperView:
     def __init__(self, root):
         self.root = root
-        self.root.title("Scraper Modular Juridico - BDTD/Google")
-        self.root.geometry("1400x800")
+        self.root.title("Coletor de Dados BDTD/Google")
+        self.root.geometry("1200x750")
+
+        # Configuração de Estilo
+        style = ttk.Style()
+        style.theme_use('clam')
         
-        # --- Callbacks do Controller ---
+        # --- Callbacks do Controller (Inicialização) ---
         self.get_row_status = None      
         self.on_action_item = None      
         self.on_action_search = None    
@@ -18,6 +22,7 @@ class ScraperView:
         self.on_open_search_url = None
         self.on_show_sample = None
         
+        # Compatibilidade com chamadas antigas
         self.search_info_command = None
         self.clear_pdf_command = None
         self.redownload_command = None
@@ -28,434 +33,421 @@ class ScraperView:
         # --- DADOS PARA FILTRAGEM E VISUALIZAÇÃO ---
         self.all_data = [] 
         self.filter_vars = {} 
-        self.is_summarized = False  # <--- NOVA VARIÁVEL DE ESTADO
+        self.is_summarized = False
         
+        # --- CRIAÇÃO DAS ABAS (NOTEBOOK) ---
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(expand=True, fill='both', padx=5, pady=5)
+
+        # Aba 1: Coletor (Interface Principal)
+        self.tab_scraper = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_scraper, text="Coletor de Dados")
+        
+        # Aba 2: Programas (Nova Tabela)
+        self.tab_programs = ttk.Frame(self.notebook)
+        self.notebook.add(self.tab_programs, text="Programas de Pós-Graduação")
+
+        # --- CONFIGURAÇÃO DA ABA 1 (COLETOR) ---
         self._setup_layout()
         self._setup_table()
+        
+        # --- CONFIGURAÇÃO DA ABA 2 (PROGRAMAS) ---
+        self._setup_programs_tab()
 
     def _setup_layout(self):
-        self.input_frame = tk.LabelFrame(self.root, text="Parametros", padx=10, pady=10)
-        self.input_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Widgets de Input
-        tk.Label(self.input_frame, text="Motor:").pack(side=tk.LEFT)
-        self.combo_engine = ttk.Combobox(self.input_frame, values=["BDTD", "Google"], width=10, state="readonly")
-        self.combo_engine.current(0)
-        self.combo_engine.pack(side=tk.LEFT, padx=5)
-        
-        tk.Label(self.input_frame, text="Termo:").pack(side=tk.LEFT)
-        self.combo_term = ttk.Combobox(self.input_frame, values=["jurimetria", "inteligência artificial", "análise de discurso", "algoritmo", "direito digital" , "tecnologia da informação"], width=60)
-        self.combo_term.pack(side=tk.LEFT, padx=5)
-        
-        tk.Label(self.input_frame, text="Ano:").pack(side=tk.LEFT)
-        self.combo_year = ttk.Combobox(self.input_frame, values=[str(x) for x in range(2020, 2026)], width=6)
-        self.combo_year.current(0)
-        self.combo_year.pack(side=tk.LEFT, padx=5)
-        
-        # Botões
-        self.btn_run = tk.Button(self.input_frame, text="Iniciar", bg="#4CAF50", fg="white")
-        self.btn_run.pack(side=tk.LEFT, padx=5)
-        
-        self.btn_stop = tk.Button(self.input_frame, text="Parar", bg="#F44336", fg="white", state="disabled")
-        self.btn_stop.pack(side=tk.LEFT, padx=5)
-        
-        self.btn_refresh = tk.Button(self.input_frame, text="Recarregar", bg="#2196F3", fg="white")
-        self.btn_refresh.pack(side=tk.LEFT, padx=5)
+        """Monta a área de inputs e controles na primeira aba."""
+        # Input Frame
+        self.input_frame = tk.LabelFrame(self.tab_scraper, text="Parâmetros", padx=10, pady=5)
+        self.input_frame.pack(fill="x", padx=10, pady=5)
 
-        self.btn_sample = tk.Button(
-            self.input_frame, 
-            text="🔍 Amostra (1/Univ)", 
-            bg="#d9edf7", 
-            command=lambda: self.on_show_sample() if self.on_show_sample else print("Callback de amostra não conectado")
-        )
-        self.btn_sample.pack(side=tk.LEFT, padx=5)
+        tk.Label(self.input_frame, text="Motor:").pack(side="left")
+        self.engine_var = tk.StringVar(value="BDTD")
+        self.engine_cb = ttk.Combobox(self.input_frame, textvariable=self.engine_var, values=["BDTD", "Google"], width=8, state="readonly")
+        self.engine_cb.pack(side="left", padx=5)
 
-        # --- NOVO BOTÃO DE RESUMO ---
-        self.btn_summarize = tk.Button(
-            self.input_frame,
-            text="Resumir Tabela",
-            bg="#FF9800",
-            fg="white",
-            command=self.toggle_summary_view  # Chama a nova função
-        )
-        self.btn_summarize.pack(side=tk.LEFT, padx=5)
+        tk.Label(self.input_frame, text="Termo:").pack(side="left")
+        self.term_entry = tk.Entry(self.input_frame, width=30)
+        self.term_entry.pack(side="left", padx=5)
+
+        tk.Label(self.input_frame, text="Ano:").pack(side="left")
+        self.year_entry = tk.Entry(self.input_frame, width=6)
+        self.year_entry.pack(side="left", padx=5)
+        self.year_entry.insert(0, str(datetime.datetime.now().year))
+
+        # Action Frame
+        self.action_frame = tk.Frame(self.tab_scraper)
+        self.action_frame.pack(fill="x", padx=10, pady=5)
+
+        self.btn_start = tk.Button(self.action_frame, text="Iniciar Coleta", bg="#dddddd")
+        self.btn_start.pack(side="left", padx=5)
+
+        self.btn_stop = tk.Button(self.action_frame, text="Parar", state="disabled", bg="#ffcccc")
+        self.btn_stop.pack(side="left", padx=5)
         
-        # Barra de Status Clicável
-        self.status_frame = tk.Frame(self.root, bd=1, relief=tk.SUNKEN)
-        self.status_frame.pack(side=tk.BOTTOM, fill=tk.X)
-        self.lbl_status = tk.Label(self.status_frame, text="Pronto.", anchor=tk.W, cursor="hand2", fg="blue")
-        self.lbl_status.pack(fill=tk.X)
-        self.lbl_status.bind("<Button-1>", self.show_status_history)
+        self.btn_refresh = tk.Button(self.action_frame, text="Atualizar Tabela")
+        self.btn_refresh.pack(side="left", padx=5)
+
+        self.btn_sample = tk.Button(self.action_frame, text="Amostra (1/Univ)", command=lambda: self._trigger_show_sample())
+        self.btn_sample.pack(side="left", padx=5)
+
+        self.lbl_link = tk.Label(self.action_frame, text="URL Alvo: -", fg="blue", cursor="hand2")
+        self.lbl_link.pack(side="left", padx=15)
+        self.lbl_link.bind("<Button-1>", lambda e: self._open_url(self.lbl_link.cget("text")))
+
+        # Filter Frame
+        self.filter_frame = tk.LabelFrame(self.tab_scraper, text="Filtros de Visualização", padx=10, pady=5)
+        self.filter_frame.pack(fill="x", padx=10, pady=5)
         
-        # Preview de Link
-        self.link_frame = tk.Frame(self.root, padx=5)
-        self.link_frame.pack(fill=tk.X)
-        self.lbl_link = tk.Label(self.link_frame, text="...", fg="gray")
-        self.lbl_link.pack(side=tk.LEFT)
+        self._create_filter_widgets()
+
+        # Log Frame
+        self.log_frame = tk.LabelFrame(self.tab_scraper, text="Log de Status", padx=10, pady=5)
+        self.log_frame.pack(fill="x", padx=10, pady=5)
         
+        self.log_text = ScrolledText(self.log_frame, height=6, state='disabled', font=("Consolas", 9))
+        self.log_text.pack(fill="both", expand=True)
+        # Label simples para status rápido
+        self.lbl_status = tk.Label(self.log_frame, text="Pronto.", anchor="w")
+        self.lbl_status.pack(fill="x")
+
     def _setup_table(self):
-        self.table_frame = tk.Frame(self.root)
-        self.table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        """Monta a tabela principal (Treeview) na primeira aba."""
+        table_frame = tk.Frame(self.tab_scraper)
+        table_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Definição das colunas com a nova coluna ANO
-        self.columns_config = {
-            "id": {"text": "ID", "width": 40, "anchor": "center"},
-            "termo": {"text": "Termo", "width": 100},
-            "ano": {"text": "Ano", "width": 60, "anchor": "center"},  # <--- NOVA COLUNA AQUI
-            "titulo": {"text": "Título", "width": 300},
-            "autor": {"text": "Autor", "width": 100},
-            "sigla": {"text": "Sigla", "width": 60, "anchor": "center"},
-            "universidade": {"text": "Universidade", "width": 120},
-            "programa": {"text": "Programa", "width": 120},
-            "link_pdf": {"text": "PDF", "width": 100},
-            "link_repo": {"text": "Repo", "width": 100},
-            "link_bdtd": {"text": "BDTD", "width": 100}
-        }
+        cols = ("ID", "Termo", "Ano", "Titulo", "Autor", "Sigla", "Universidade", "Programa", "PDF", "Repo", "BDTD")
+        self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', selectmode='extended')
         
-        col_names = list(self.columns_config.keys())
-
-        # --- FRAME DE FILTROS (Acima da Tabela) ---
-        self.filter_frame = tk.Frame(self.table_frame)
-        self.filter_frame.pack(fill=tk.X)
-
-        # Cria uma entrada de texto para cada coluna
-        for i, col in enumerate(col_names):
-            cfg = self.columns_config[col]
-            
-            f_container = tk.Frame(self.filter_frame, width=cfg["width"], bd=1, relief=tk.RAISED)
-            f_container.pack_propagate(False) 
-            f_container.pack(side=tk.LEFT, padx=1, fill=tk.Y)
-            
-            var = tk.StringVar()
-            # Importante: O filtro agora chamará a lógica que respeita o modo de visualização
-            var.trace("w", lambda name, index, mode, v=var: self._refresh_table_view())
-            self.filter_vars[col] = var
-            
-            ent = tk.Entry(f_container, textvariable=var, font=("Arial", 8))
-            ent.pack(fill=tk.BOTH, expand=True)
-            
-            tk.Label(f_container, text=cfg["text"], font=("Arial", 7, "bold"), bg="#ddd").pack(fill=tk.X, side=tk.TOP)
-
-        # --- TREEVIEW ---
-        self.tree = ttk.Treeview(self.table_frame, columns=col_names, show="headings", selectmode="browse")
-
-        for col in col_names:
-            cfg = self.columns_config[col]
-            self.tree.heading(col, text=cfg["text"], command=lambda _col=col: self.sort_column(_col, False))
-            self.tree.column(col, width=cfg["width"], anchor=cfg.get("anchor", "w"))
-
-        scrollbar = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscroll=scrollbar.set)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.tree.pack(fill=tk.BOTH, expand=True)
-
-        self.tree.bind("<Button-3>", self._on_right_click)
-        self.tree.bind("<Double-1>", self._on_double_click)
-    
-    def get_inputs(self):
-        """Retorna os valores atuais dos campos de entrada."""
-        return {
-            "engine": self.combo_engine.get(),
-            "term": self.combo_term.get(),
-            "year": self.combo_year.get()
-        }
-
-    def clear_table(self):
-        """Limpa visualização e cache."""
-        self.all_data = [] # Limpa cache
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-       
-    def update_status(self, text): 
-        hora = datetime.datetime.now().strftime("%H:%M:%S")
-        self.lbl_status.config(text=text)
-        self.status_history.append(f"[{hora}] {text}")
-        if len(self.status_history) > 300: self.status_history.pop(0)
-
-    def show_status_history(self, event=None):
-        top = tk.Toplevel(self.root)
-        top.title("Log de Execução")
-        top.geometry("600x400")
-        txt = ScrolledText(top); txt.pack(fill=tk.BOTH, expand=True)
-        for m in self.status_history: txt.insert(tk.END, m+"\n")
-        txt.see(tk.END)
-
-    def update_link_display(self, url): 
-        self.lbl_link.config(text=url)
-
-    def toggle_buttons(self, is_running): 
-        self.btn_run.config(state="disabled" if is_running else "normal")
-        self.btn_stop.config(state="normal" if is_running else "disabled")
-
-    def open_browser(self, url):
-        if url and url.startswith("http"): webbrowser.open_new_tab(url)
-
-    def set_start_command(self, cmd): self.btn_run.config(command=cmd)
-    def set_stop_command(self, cmd): self.btn_stop.config(command=cmd)
-    def set_refresh_command(self, cmd): self.btn_refresh.config(command=cmd)
-    
-    def set_year_changed_command(self, cmd):
-        self.combo_year.bind("<<ComboboxSelected>>", cmd)
-        self.combo_term.bind("<<ComboboxSelected>>", cmd)
-        self.combo_engine.bind("<<ComboboxSelected>>", cmd)
-
-    def set_search_info_command(self, cmd): pass 
-
-    def _on_right_click(self, event):
-        """
-        Menu de contexto com opções de navegação, gestão e extração/limpeza.
-        """
-        item_id = self.tree.identify_row(event.y)
-        if not item_id: return
-        self.tree.selection_set(item_id)
+        self.tree.heading("ID", text="ID")
+        self.tree.column("ID", width=40, anchor="center")
         
-        vals = self.tree.item(item_id, 'values')
-        db_id = vals[0]
+        self.tree.heading("Termo", text="Termo")
+        self.tree.column("Termo", width=80)
+
+        self.tree.heading("Ano", text="Ano")
+        self.tree.column("Ano", width=50, anchor="center")
         
-        status = self.get_row_status(db_id) if self.get_row_status else None
-        if not status: return
-
-        meta = status.get('meta', {})
-        link_bdtd = meta.get('link_bdtd', '')
-        link_repo = meta.get('link_repo', '')
-        link_pdf = meta.get('link_pdf', '')
+        self.tree.heading("Titulo", text="Título")
+        self.tree.column("Titulo", width=250)
         
-        # Estados dos Arquivos
-        st_bdtd_file = "normal" if status.get('has_bdtd') else "disabled"
-        st_repo_file = "normal" if status.get('has_repo') else "disabled"
-        st_search_file = "normal" if status.get('has_search') else "disabled"
-
-        # Estados dos Links
-        st_url_bdtd = "normal" if link_bdtd and link_bdtd.startswith("http") else "disabled"
-        st_url_repo = "normal" if link_repo and link_repo.startswith("http") else "disabled"
-        st_url_pdf = "normal" if link_pdf and link_pdf.startswith("http") else "disabled"
-
-        m = tk.Menu(self.root, tearoff=0)
-
-        # --- 1. BUSCADOR (Detalhes) ---
-        m.add_command(label="--- DETALHES (BUSCADOR) ---", state="disabled")
-        m.add_command(label="🌐 Abrir URL do Buscador", state=st_url_bdtd, 
-                      command=lambda: self.open_browser(link_bdtd))
-        m.add_command(label="📄 Exibir HTML Local", state=st_bdtd_file, 
-                      command=lambda: self.on_action_item('view', db_id, 'bdtd'))
-        m.add_command(label="❌ Apagar HTML", state=st_bdtd_file, 
-                      command=lambda: self.on_action_item('delete', db_id, 'bdtd'))
-        m.add_command(label="⬇️ Baixar HTML", 
-                      command=lambda: self.on_action_item('download', db_id, 'bdtd', link_bdtd))
-
-        m.add_separator()
-
-        # --- 2. REPOSITÓRIO (Universidade) ---
-        m.add_command(label="--- REPOSITÓRIO ---", state="disabled")
-        m.add_command(label="🌐 Abrir URL do Repositório", state=st_url_repo, 
-                      command=lambda: self.open_browser(link_repo))
-        m.add_command(label="📄 Abrir PDF Original", state=st_url_pdf, 
-                      command=lambda: self.open_browser(link_pdf))
-
-        m.add_command(label="🏛️ Exibir HTML Local", state=st_repo_file, 
-                      command=lambda: self.on_action_item('view', db_id, 'repo'))
+        self.tree.heading("Autor", text="Autor")
+        self.tree.column("Autor", width=120)
         
-        m.add_command(label="⚙️ Extrair Programa e PDF (Local)", state=st_repo_file, 
-                      command=lambda: self.on_reprocess(db_id, link_repo))
+        self.tree.heading("Sigla", text="Sigla")
+        self.tree.column("Sigla", width=60, anchor="center")
+
+        self.tree.heading("Universidade", text="Universidade")
+        self.tree.column("Universidade", width=150)
         
-        m.add_command(label="⚙️ Obter Sigla e Universidade (Local)", state=st_repo_file, 
-                      command=lambda: self.on_reprocess(db_id, link_repo))
-
-        # --- NOVA OPÇÃO DE APAGAR ---
-        m.add_command(label="❌ Apagar Dados Extraídos", 
-                      command=lambda: self.on_action_item('delete_extraction', db_id, 'repo'))
-
-        m.add_command(label="❌ Apagar HTML", state=st_repo_file, 
-                      command=lambda: self.on_action_item('delete', db_id, 'repo'))
+        self.tree.heading("Programa", text="Programa")
+        self.tree.column("Programa", width=150)
         
-        m.add_command(label="⬇️ Baixar HTML", state=st_url_repo,
-                      command=lambda: self.on_action_item('download', db_id, 'repo', link_repo))
-
-        m.add_separator()
-
-        # --- 3. PÁGINA DE PESQUISA (Lista) ---
-        m.add_command(label="--- LISTA DE RESULTADOS ---", state="disabled")
-        m.add_command(label="🌐 Abrir URL da Lista", 
-                      command=lambda: self.on_open_search_url(meta))
-        m.add_command(label="📄 Exibir Lista Local", state=st_search_file, 
-                      command=lambda: self.on_action_search('view', meta))
-        m.add_command(label="❌ Apagar Lista", state=st_search_file, 
-                      command=lambda: self.on_action_search('delete', meta))
-        m.add_command(label="⬇️ Baixar Lista", 
-                      command=lambda: self.on_action_search('download', meta))
-
-        m.add_separator()
-        # Exemplo de como adicionar no view.py (dentro do menu de contexto)
-        m.add_command(label="Definir Sigla Manualmente", 
-                      command=lambda: self._handle_action("set_sigla", item_id, "repo", None))
-
-        m.post(event.x_root, event.y_root)
+        self.tree.heading("PDF", text="PDF")
+        self.tree.column("PDF", width=40, anchor="center")
         
-    def _on_double_click(self, event):
-        item_id = self.tree.identify_row(event.y)
-        if not item_id: return
-        vals = self.tree.item(item_id, 'values')
-        # Tenta abrir o link da BDTD (coluna 9)
-        if len(vals) > 9 and vals[9].startswith("http"):
-            self.open_browser(vals[9])
-
-    def sort_column(self, col, reverse):
-        """Ordena a Treeview clicando no cabeçalho."""
-        l = [(self.tree.set(k, col), k) for k in self.tree.get_children('')]
+        self.tree.heading("Repo", text="Repo")
+        self.tree.column("Repo", width=40, anchor="center")
         
-        try:
-            # Tenta ordenar como número (para ID)
-            l.sort(key=lambda t: float(t[0]), reverse=reverse)
-        except ValueError:
-            # Ordenação padrão string
-            l.sort(key=lambda t: t[0].lower(), reverse=reverse)
+        self.tree.heading("BDTD", text="BDTD")
+        self.tree.column("BDTD", width=40, anchor="center")
 
-        for index, (val, k) in enumerate(l):
-            self.tree.move(k, '', index)
+        vsb = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        hsb = ttk.Scrollbar(table_frame, orient="horizontal", command=self.tree.xview)
+        self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        # Alterna direção para o próximo clique
-        self.tree.heading(col, command=lambda: self.sort_column(col, not reverse))
+        vsb.pack(side='right', fill='y')
+        hsb.pack(side='bottom', fill='x')
+        self.tree.pack(fill='both', expand=True)
         
-    def _handle_action(self, action, item_id, target_type, url=None):
-        """
-        Método auxiliar para disparar ações do menu de contexto.
-        Verifica se o controller conectou uma função a 'on_action_item' antes de chamar.
-        """
-        if hasattr(self, 'on_action_item') and self.on_action_item:
-            self.on_action_item(action, item_id, target_type, url)
-        else:
-            print(f"Ação '{action}' ignorada: Controller não conectado.")
-            
-    def toggle_summary_view(self):
-        """Alterna entre visualização completa e resumida (por Termo + Ano)."""
-        self.is_summarized = not self.is_summarized
+        # Tags de cor
+        self.tree.tag_configure('has_pdf', background='#d1e7dd') 
+        self.tree.tag_configure('has_repo', background='#fff3cd')
 
-        if self.is_summarized:
-            self.btn_summarize.config(text="Mostrar Tudo", bg="#2196F3") # Azul para voltar
-        else:
-            self.btn_summarize.config(text="Resumir Tabela", bg="#FF9800") # Laranja para ação
-
-        self._refresh_table_view()
-
-    def _refresh_table_view(self):
-        """
-        Função centralizadora que decide o que mostrar na tabela
-        baseado no estado (Resumido/Completo) e nos filtros.
-        """
-        # 1. Limpa visualização atual
-        for item in self.tree.get_children():
-            self.tree.delete(item)
-
-        # 2. Obtém termos de busca dos filtros
-        filters = {col: var.get().lower() for col, var in self.filter_vars.items() if var.get()}
-        col_indices = {col: i for i, col in enumerate(self.columns_config.keys())}
+        # Bindings
+        self.tree.bind("<Button-3>", self.show_context_menu)
+        self.tree.bind("<Double-1>", self.on_double_click)
         
-        # 3. Filtra os dados brutos (self.all_data)
-        filtered_data = []
-        for row in self.all_data:
-            match = True
-            for col, text in filters.items():
-                idx = col_indices.get(col)
-                if idx is not None:
-                    cell_value = str(row[idx]).lower()
-                    if text not in cell_value:
-                        match = False
-                        break
-            if match:
-                filtered_data.append(row)
-
-        # 4. Se estiver em modo RESUMO, agrupa os dados filtrados
-        if self.is_summarized:
-            data_to_show = self._group_data_by_term_year(filtered_data, col_indices)
-        else:
-            data_to_show = filtered_data
-
-        # 5. Insere na Treeview
-        for row in data_to_show:
-            self.tree.insert("", "end", values=row)
-
-    def _group_data_by_term_year(self, dataset, col_indices):
-        """
-        Agrupa os dados por Termo e Ano.
-        Retorna apenas uma linha representativa para cada par único.
-        """
-        idx_termo = col_indices['termo']
-        idx_ano = col_indices['ano']
+        # Menu de Contexto
+        self.context_menu = tk.Menu(self.root, tearoff=0)
         
-        seen_keys = set()
-        grouped_rows = []
-
-        for row in dataset:
-            # Chave única: (termo, ano)
-            key = (row[idx_termo], row[idx_ano])
-            
-            if key not in seen_keys:
-                seen_keys.add(key)
-                
-                # Cria uma linha visualmente limpa para o resumo
-                # Converte tuple para list para poder modificar
-                new_row = list(row)
-                
-                # Mantém ID, Termo e Ano. Limpa o resto para indicar agrupamento
-                # Define índices que queremos "limpar" visualmente
-                idx_titulo = col_indices.get('titulo')
-                idx_autor = col_indices.get('autor')
-                
-                if idx_titulo is not None: new_row[idx_titulo] = "(Vários itens agrupados...)"
-                if idx_autor is not None: new_row[idx_autor] = "---"
-                
-                # Opcional: Limpar links para evitar clique errado em item agrupado
-                # idx_pdf = col_indices.get('link_pdf')
-                # if idx_pdf: new_row[idx_pdf] = ""
-
-                grouped_rows.append(tuple(new_row))
+        self.menu_view = tk.Menu(self.context_menu, tearoff=0)
+        self.menu_view.add_command(label="Ver HTML BDTD (Lista)", command=lambda: self._trigger_search_action('view'))
+        self.menu_view.add_command(label="Ver HTML BDTD (Detalhe)", command=lambda: self._trigger_item_action('view', 'bdtd'))
+        self.menu_view.add_command(label="Ver HTML Repositório", command=lambda: self._trigger_item_action('view', 'repo'))
+        self.context_menu.add_cascade(label="Visualizar HTML Salvo", menu=self.menu_view)
         
-        return grouped_rows
-
-    def add_row(self, *args):
-        """
-        Adiciona linha no cache. 
-        Nota: Se estiver no modo resumido, a linha nova só aparece se atualizar a view.
-        """
-        self.all_data.append(args)
+        self.context_menu.add_separator()
         
-        # Se NÃO estiver resumido, insere diretamente para performance (comportamento original)
-        # Se estiver resumido ou com filtros ativos, recarrega a lógica completa
-        if not self.is_summarized and not any(v.get() for v in self.filter_vars.values()):
-            self.tree.insert("", "end", values=args)
-        else:
-            # Se houver filtros ou resumo, reaplica a lógica para garantir consistência
-            self._refresh_table_view()
+        self.context_menu.add_command(label="Abrir Link da Busca (Navegador)", command=lambda: self._trigger_open_search_url())
+        self.context_menu.add_command(label="Baixar HTML Repositório", command=lambda: self._trigger_item_action('download', 'repo'))
+        self.context_menu.add_command(label="Baixar HTML Repositório (VISUAL)", command=lambda: self._trigger_item_action('download_visual', 'repo'))
+        self.context_menu.add_command(label="Reprocessar Dados (Parser)", command=lambda: self._trigger_reprocess())
+        self.context_menu.add_command(label="Definir SIGLA Manualmente", command=lambda: self._trigger_item_action('set_sigla', 'manual'))
+        
+        self.context_menu.add_separator()
+        
+        self.menu_clear = tk.Menu(self.context_menu, tearoff=0)
+        self.menu_clear.add_command(label="Limpar URL PDF", command=lambda: self._safe_clear_command(self.clear_pdf_command))
+        self.menu_clear.add_command(label="Limpar URL Repositório", command=lambda: self._safe_clear_command(self.clear_repo_command))
+        self.menu_clear.add_command(label="Apagar Dados Extraídos", command=lambda: self._trigger_item_action('delete_extraction', 'extracted_data'))
+        self.menu_clear.add_command(label="Apagar HTML Busca (Lista)", command=lambda: self._trigger_search_action('delete'))
+        self.menu_clear.add_command(label="Apagar HTML BDTD (Detalhe)", command=lambda: self._trigger_item_action('delete', 'bdtd'))
+        self.menu_clear.add_command(label="Apagar HTML Repositório", command=lambda: self._trigger_item_action('delete', 'repo'))
+        self.context_menu.add_cascade(label="Limpar / Apagar", menu=self.menu_clear)
+
+    def _setup_programs_tab(self):
+        """Monta a tabela de programas na segunda aba."""
+        filter_frame = ttk.Frame(self.tab_programs)
+        filter_frame.pack(fill='x', padx=10, pady=5)
+        
+        ttk.Label(filter_frame, text="Total de Registros:").pack(side='left')
+        self.lbl_total_progs = ttk.Label(filter_frame, text="0")
+        self.lbl_total_progs.pack(side='left', padx=5)
+
+        tree_frame = ttk.Frame(self.tab_programs)
+        tree_frame.pack(fill='both', expand=True, padx=10, pady=5)
+
+        cols = ("Código", "Programa", "Sigla IES", "Grau", "Modalidade", "Nota", "Situação", "Associativa", "Área Aval.", "Área Conec.", "Grande Área")
+        self.prog_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', selectmode='browse')
+        
+        vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=self.prog_tree.yview)
+        hsb = ttk.Scrollbar(tree_frame, orient="horizontal", command=self.prog_tree.xview)
+        self.prog_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+        
+        vsb.pack(side='right', fill='y')
+        hsb.pack(side='bottom', fill='x')
+        self.prog_tree.pack(fill='both', expand=True)
+
+        col_widths = [100, 300, 80, 100, 100, 50, 100, 50, 150, 150, 150]
+        for i, col in enumerate(cols):
+            self.prog_tree.heading(col, text=col, command=lambda c=col: self._sort_treeview(self.prog_tree, c, False))
+            self.prog_tree.column(col, width=col_widths[i], minwidth=50)
+
+    # --- MÉTODOS QUE ESTAVAM FALTANDO ---
+
+    def _create_filter_widgets(self):
+        """Cria os checkboxes para filtros."""
+        frame_cb = ttk.Frame(self.filter_frame)
+        frame_cb.pack(fill='x', pady=2)
+        
+        filtros = [
+            ("Faltando Sigla", 5),
+            ("Faltando Universidade", 6),
+            ("Faltando Programa", 7),
+            ("Sem Link PDF", 8),
+            ("Sem Link Repositório", 9)
+        ]
+        
+        for texto, col_idx in filtros:
+            var = tk.BooleanVar()
+            self.filter_vars[col_idx] = var 
+            cb = ttk.Checkbutton(frame_cb, text=texto, variable=var, command=self._apply_filters)
+            cb.pack(side='left', padx=10)
 
     def _apply_filters(self):
-        """Redireciona para o novo método centralizado."""
-        self._refresh_table_view()
-
-
-##################
-
-
-    def update_row_by_id(self, db_id, s, u, p, pdf):
-        """
-        Atualiza uma linha específica na tabela e no cache de dados.
-        Corrige os índices devido à inclusão da coluna 'Ano'.
-        """
-        # 1. Atualiza visualmente na Treeview
+        """Aplica filtros na tabela principal."""
         for item in self.tree.get_children():
-            # O ID está na coluna 0
-            if str(self.tree.item(item, 'values')[0]) == str(db_id):
-                v = list(self.tree.item(item, 'values'))
-                
-                # Índices Corretos:
-                # 0:id, 1:termo, 2:ano, 3:titulo, 4:autor
-                # 5:sigla, 6:univ, 7:prog, 8:pdf
-                
-                v[5] = s   # Sigla
-                v[6] = u   # Universidade
-                v[7] = p   # Programa
-                v[8] = pdf # Link PDF
-                
-                self.tree.item(item, values=tuple(v))
+            self.tree.delete(item)
+            
+        for values in self.all_data:
+            mostrar = True
+            for col_idx, var in self.filter_vars.items():
+                if var.get(): 
+                    valor_celula = str(values[col_idx]).strip()
+                    if valor_celula not in ['-', '', 'None']:
+                        if col_idx in [8, 9] and len(valor_celula) > 5:
+                             mostrar = False
+                        elif col_idx not in [8, 9]:
+                             mostrar = False
+            if mostrar:
+                self._insert_row_visual(values)
+
+    def show_context_menu(self, event):
+        item = self.tree.identify_row(event.y)
+        if item:
+            self.tree.selection_set(item)
+            self.context_menu.post(event.x_root, event.y_root)
+
+    def on_double_click(self, event):
+        item = self.tree.identify_row(event.y)
+        if item:
+            vals = self.tree.item(item)['values']
+            # Tenta abrir o PDF (8) ou o Repo (9)
+            if vals[8] and len(vals[8]) > 5:
+                self._open_url(vals[8])
+            elif vals[9] and len(vals[9]) > 5:
+                self._open_url(vals[9])
+
+    def _sort_treeview(self, tree, col, descending):
+        data = [(tree.set(child, col), child) for child in tree.get_children('')]
+        try:
+            data.sort(key=lambda t: float(t[0]), reverse=descending)
+        except ValueError:
+            data.sort(key=lambda t: t[0].lower(), reverse=descending)
+        for index, (val, k) in enumerate(data):
+            tree.move(k, '', index)
+        tree.heading(col, command=lambda: self._sort_treeview(tree, col, not descending))
+
+    def load_programs_data(self, data_rows):
+        for item in self.prog_tree.get_children():
+            self.prog_tree.delete(item)
+        if not data_rows:
+            self.lbl_total_progs.config(text="0")
+            return
+        for row in data_rows:
+            self.prog_tree.insert('', 'end', values=row)
+        self.lbl_total_progs.config(text=str(len(data_rows)))
+
+    def _insert_row_visual(self, values):
+        item_id = self.tree.insert('', 'end', values=values)
+        link_pdf = values[8]
+        link_repo = values[9]
+        tags = []
+        if link_pdf and len(link_pdf) > 5 and link_pdf != '-':
+            tags.append('has_pdf')
+        elif link_repo and len(link_repo) > 5 and link_repo != '-':
+            tags.append('has_repo')
+        self.tree.item(item_id, tags=tags)
+
+    def add_row(self, *values):
+        self.all_data.append(values)
+        self._insert_row_visual(values)
+
+    def update_row_by_id(self, db_id, sigla, univ, prog, link_pdf):
+        for item in self.tree.get_children():
+            vals = list(self.tree.item(item, 'values'))
+            if str(vals[0]) == str(db_id):
+                vals[5] = sigla
+                vals[6] = univ
+                vals[7] = prog
+                vals[8] = link_pdf
+                self.tree.item(item, values=tuple(vals))
+                tags = []
+                if link_pdf and len(link_pdf) > 5 and link_pdf != '-':
+                    tags.append('has_pdf')
+                elif vals[9] and len(vals[9]) > 5 and vals[9] != '-':
+                    tags.append('has_repo')
+                self.tree.item(item, tags=tags)
                 break
         
-        # 2. Atualiza
+        for i, row in enumerate(self.all_data):
+            if str(row[0]) == str(db_id):
+                new_row = list(row)
+                new_row[5] = sigla
+                new_row[6] = univ
+                new_row[7] = prog
+                new_row[8] = link_pdf
+                self.all_data[i] = tuple(new_row)
+                break
+
+    # --- Helpers de Interação ---
+
+    def _get_selected_id(self):
+        selected = self.tree.selection()
+        if selected:
+            return self.tree.item(selected[0])['values'][0]
+        return None
+
+    def _get_selected_meta(self):
+        selected = self.tree.selection()
+        if selected:
+            vals = self.tree.item(selected[0])['values']
+            # Tenta extrair a página da URL BDTD (coluna 10)
+            url_bdtd = str(vals[10])
+            pagina = 1
+            if 'page=' in url_bdtd:
+                try:
+                    pagina = url_bdtd.split('page=')[1].split('&')[0]
+                except: pass
+                
+            return {
+                'id': vals[0],
+                'termo': vals[1],
+                'ano': vals[2],
+                'pagina': pagina
+            }
+        return None
+
+    def _trigger_item_action(self, action, target, extra_arg=None):
+        item_id = self._get_selected_id()
+        if item_id and self.on_action_item:
+            vals = self.tree.item(self.tree.selection()[0])['values']
+            # Coluna 9 = Repo, 10 = BDTD
+            url = vals[9] if target == 'repo' else vals[10] 
+            self.on_action_item(action, item_id, target, url)
+
+    def _trigger_search_action(self, action):
+        meta = self._get_selected_meta()
+        if meta and self.on_action_search:
+            self.on_action_search(action, meta)
+
+    def _trigger_reprocess(self):
+        item_id = self._get_selected_id()
+        if item_id and self.on_reprocess:
+            vals = self.tree.item(self.tree.selection()[0])['values']
+            link_repo = vals[9]
+            self.on_reprocess(item_id, link_repo)
+
+    def _trigger_open_search_url(self):
+        meta = self._get_selected_meta()
+        if meta and self.on_open_search_url:
+            self.on_open_search_url(meta)
+
+    def _trigger_show_sample(self):
+        if self.on_show_sample:
+            self.on_show_sample()
+
+    def _safe_clear_command(self, cmd):
+        if cmd: cmd(self._get_selected_id())
+
+    # --- Setters e Utilitários Padrão ---
+
+    def get_inputs(self):
+        return {
+            'term': self.term_entry.get(),
+            'year': self.year_entry.get(),
+            'engine': self.engine_var.get()
+        }
+
+    def set_start_command(self, command):
+        self.btn_start.config(command=command)
+
+    def set_stop_command(self, command):
+        self.btn_stop.config(command=command)
+    
+    def set_refresh_command(self, command):
+        self.btn_refresh.config(command=command)
+
+    def set_year_changed_command(self, command):
+        self.year_entry.bind('<KeyRelease>', lambda e: command())
+        self.term_entry.bind('<KeyRelease>', lambda e: command())
+        self.engine_var.trace("w", lambda *args: command())
+        
+    def set_search_info_command(self, command):
+        self.search_info_command = command
+
+    def toggle_buttons(self, is_running):
+        state_start = 'disabled' if is_running else 'normal'
+        state_stop = 'normal' if is_running else 'disabled'
+        self.btn_start.config(state=state_start)
+        self.btn_stop.config(state=state_stop)
+
+    def update_status(self, msg):
+        self.lbl_status.config(text=msg)
+        self.log_text.config(state='normal')
+        self.log_text.insert('end', f"[{datetime.datetime.now().strftime('%H:%M:%S')}] {msg}\n")
+        self.log_text.see('end')
+        self.log_text.config(state='disabled')
+        self.root.update_idletasks()
+
+    def update_link_display(self, url):
+        self.lbl_link.config(text=url)
+
+    def _open_url(self, url):
+        if url and url.startswith("http"):
+            webbrowser.open(url)
+
+    def clear_table(self):
+        self.all_data = [] 
+        for item in self.tree.get_children():
+            self.tree.delete(item)

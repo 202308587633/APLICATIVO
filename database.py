@@ -8,46 +8,7 @@ class ScraperDB:
 
     def _get_connection(self):
         return sqlite3.connect(self.db_name)
-
-    def _init_db(self):
-        with self._get_connection() as conn:
-            cursor = conn.cursor()
-            
-            # Tabela de Trabalhos (Atualizada com colunas 'ano' e 'pagina')
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS trabalhos (
-                    link_bdtd TEXT,
-                    termo TEXT,
-                    ano TEXT,          -- Novo: Para vincular à página de busca
-                    pagina INTEGER,    -- Novo: Para vincular à página de busca
-                    titulo TEXT,
-                    autor TEXT,
-                    sigla TEXT,
-                    universidade TEXT,
-                    programa TEXT,
-                    link_pdf TEXT,
-                    link_repo TEXT,
-                    html_bdtd TEXT, 
-                    html_repo TEXT,
-                    data_coleta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (link_bdtd, termo)
-                )
-            ''')
-
-            # NOVA TABELA: Páginas de Busca (Listagens)
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS paginas_busca (
-                    engine TEXT,
-                    termo TEXT,
-                    ano TEXT,
-                    pagina INTEGER,
-                    html_source TEXT,
-                    data_coleta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (engine, termo, ano, pagina)
-                )
-            ''')
-            conn.commit()
-
+    
     def execute_query(self, query, params=()):
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -195,3 +156,89 @@ class ScraperDB:
             print(f"Erro ao buscar amostra: {e}")
             return []
         
+    def _init_db(self):
+        """Inicializa o banco de dados criando as tabelas necessárias."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Tabela de Trabalhos (Mantida)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS trabalhos (
+                    link_bdtd TEXT,
+                    termo TEXT,
+                    ano TEXT,
+                    pagina INTEGER,
+                    titulo TEXT,
+                    autor TEXT,
+                    sigla TEXT,
+                    universidade TEXT,
+                    programa TEXT,
+                    link_pdf TEXT,
+                    link_repo TEXT,
+                    html_bdtd TEXT, 
+                    html_repo TEXT,
+                    extracted_data TEXT, -- Campo para JSON ou dados brutos extras
+                    data_coleta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (link_bdtd, termo)
+                )
+            ''')
+
+            # Tabela de Páginas de Busca (Mantida)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS paginas_busca (
+                    engine TEXT,
+                    termo TEXT,
+                    ano TEXT,
+                    pagina INTEGER,
+                    html_source TEXT,
+                    data_coleta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (engine, termo, ano, pagina)
+                )
+            ''')
+
+            # --- NOVA TABELA: Programas de Pós-Graduação ---
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS programas_pos (
+                    codigo_programa TEXT PRIMARY KEY,
+                    nome_programa TEXT,
+                    sigla_ies TEXT,
+                    grau_academico TEXT,
+                    modalidade TEXT,
+                    nota_programa TEXT,
+                    situacao_programa TEXT,
+                    forma_associativa TEXT,
+                    area_avaliacao TEXT,
+                    area_conhecimento TEXT,
+                    grande_area_conhecimento TEXT
+                )
+            ''')
+            
+            conn.commit()
+
+    def get_all_programs(self):
+        """Retorna todos os programas de pós-graduação cadastrados."""
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM programas_pos ORDER BY nome_programa ASC")
+                return cursor.fetchall()
+        except Exception as e:
+            print(f"Erro ao buscar programas: {e}")
+            return []
+
+    def save_program(self, data_tuple):
+        """
+        Salva ou atualiza um programa de pós-graduação.
+        Espera uma tupla na ordem das colunas da tabela.
+        """
+        query = '''
+            INSERT OR REPLACE INTO programas_pos (
+                codigo_programa, nome_programa, sigla_ies, grau_academico, 
+                modalidade, nota_programa, situacao_programa, forma_associativa, 
+                area_avaliacao, area_conhecimento, grande_area_conhecimento
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        '''
+        try:
+            self.execute_query(query, data_tuple)
+        except Exception as e:
+            print(f"Erro ao salvar programa {data_tuple[0]}: {e}")
