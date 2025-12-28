@@ -103,9 +103,20 @@ class BDTDStrategy:
             edge_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             # edge_options.add_argument("--headless") # Descomente para rodar oculto
             
-            service = EdgeService(EdgeChromiumDriverManager().install())
-            driver = webdriver.Edge(service=service, options=edge_options)
+            # O código abaixo estava falhando ao iniciar o browser
+            ### service = EdgeService(EdgeChromiumDriverManager().install())
             
+            # Verifica se existe o driver local na pasta atual
+            driver_path = "msedgedriver.exe"
+            if os.path.exists(driver_path):
+                # Usa o driver local fornecido
+                service = EdgeService(executable_path=os.path.abspath(driver_path))
+            else:
+                # Fallback: Tenta baixar se não encontrar o local
+                service = EdgeService(EdgeChromiumDriverManager().install())
+            
+            driver = webdriver.Edge(service=service, options=edge_options)
+                        
             driver.get(url)
             if on_progress: on_progress("Aguardando carregamento (10s)...")
             time.sleep(10)

@@ -25,6 +25,7 @@ from parsers.unifesp_parser import UNIFESPParser
 from parsers.unifacs_parser import UNIFACSParser
 from parsers.uel_parser import UELParser
 from parsers.ifro_parser import IFROParser
+from parsers.ufma_parser import UfmaParser 
 
 class ParserFactory:
     def __init__(self):
@@ -74,6 +75,8 @@ class ParserFactory:
             "uel.br": UELParser,
             "repositorio.ifro.edu.br": IFROParser,
             "ifro.edu.br": IFROParser,
+            'ufma.br': UfmaParser,
+            'tedebc.ufma.br': UfmaParser, # Domínio específico do repositório
         }
 
     def get_parser(self, url):
