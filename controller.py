@@ -133,31 +133,12 @@ class ScraperController:
         if html: self._open_html_text(html, f"{target_type}_{db_id}")
         else: self.view.update_status(f"HTML {target_type} vazio.")
 
-    def handle_search_page_action(self, action, meta):
-        """Gerencia ações para a página de listagem (busca)."""
-        termo, ano, pagina = meta['termo'], meta['ano'], meta['pagina']
-        
-        if action == 'view':
-            html = self.db.get_search_page(termo, ano, pagina)
-            if html: 
-                self._open_html_text(html, f"busca_{termo}_{pagina}")
-            else: 
-                self.view.update_status("HTML da busca não encontrado no banco.")
-            
-        elif action == 'delete':
-            self.db.delete_search_page(termo, ano, pagina)
-            self.view.update_status(f"HTML da busca (Pág {pagina}) apagado.")
-            
-        elif action == 'download':
-            self._redownload_search_page(termo, ano, pagina)
-
     def open_generated_search_url(self, meta):
         """Recontrói a URL da busca original e abre no navegador."""
         try:
             termo, ano, pagina = meta['termo'], meta['ano'], meta['pagina']
             
             # Recria a estratégia para obter a URL correta (Assume BDTD por padrão)
-            # Se quiser suportar Google, precisaria passar 'engine' no meta
             strategy = BDTDStrategy() 
             url = strategy.get_url(termo, ano, pagina)
             
@@ -165,34 +146,12 @@ class ScraperController:
             self.view.update_status(f"Abrindo lista no navegador: Pág {pagina}")
         except Exception as e:
             self.view.update_status(f"Erro ao gerar URL: {e}")
-            
-            
-            ############################################
-            
-    def open_generated_search_url(self, meta):
-        """Recontrói a URL da busca original e abre no navegador."""
-        try:
-            termo, ano, pagina = meta['termo'], meta['ano'], meta['pagina']
-            
-            # Recria a estratégia para obter a URL correta (Assume BDTD por padrão)
-            # Se quiser suportar Google, precisaria passar 'engine' no meta
-            strategy = BDTDStrategy() 
-            url = strategy.get_url(termo, ano, pagina)
-            
-            webbrowser.open(url)
-            self.view.update_status(f"Abrindo lista no navegador: Pág {pagina}")
-        except Exception as e:
-            self.view.update_status(f"Erro ao gerar URL: {e}")
-            
-            
-            ############################################
             
     def _redownload_search_page(self, termo, ano, pagina):
         """Baixa novamente a página de listagem da busca."""
         def _task():
             try:
                 # Assume BDTD pois GoogleStrategy é mais complexa de reconstruir url fixa
-                from services.strategies import BDTDStrategy
                 from services.strategies import BDTDStrategy
                 strategy = BDTDStrategy()
                 url = strategy.get_url(termo, ano, pagina)
@@ -208,7 +167,6 @@ class ScraperController:
                 else:
                     self.root.after(0, lambda: self.view.update_status(f"Erro HTTP {resp.status_code} ao baixar lista"))
             except Exception as e:
-                # CORREÇÃO: Mesma correção de escopo aplicada aqui preventivamente
                 error_msg = f"Erro download busca: {e}"
                 self.root.after(0, lambda: self.view.update_status(error_msg))
         
@@ -269,7 +227,6 @@ class ScraperController:
                     self.root.after(0, lambda: self._ask_visual_download(db_id, url_alvo, target_type, "Conteúdo vazio."))
 
             except Exception as e:
-                # CORREÇÃO DE ESCOPO: Converte o erro para string imediatamente
                 erro_txt = str(e)
                 log(f"Falha no download rápido: {erro_txt}")
                 self.root.after(0, lambda: self._ask_visual_download(db_id, url_alvo, target_type, erro_txt))
@@ -279,7 +236,6 @@ class ScraperController:
     def force_redownload_visual(self, db_id, url_alvo, target_type):
         """
         Abre o navegador, espera, captura e fecha (MÉTODO VISUAL).
-        Correção do erro 'NameError' aplicada aqui.
         """
         def _task():
             def log(msg):
@@ -311,8 +267,6 @@ class ScraperController:
                     log("Erro: O navegador retornou conteúdo vazio/inválido.")
 
             except Exception as e:
-                # CORREÇÃO DE ESCOPO: Salva a mensagem de erro em variável local
-                # Isso impede o erro 'cannot access free variable e'
                 erro_msg = str(e)
                 log(f"Falha Crítica: {erro_msg}")
 
@@ -527,7 +481,15 @@ class ScraperController:
     def manage_field(self, db_id, field_type):
         """Limpa campos no banco e atualiza imediatamente a interface."""
         try:
-            self.db.clear_field(db_id, field_type)
+            # -------------------------------------------------------------
+            # ATUALIZAÇÃO SOLICITADA:
+            # Se for 'extracted_data', limpa também o 'link_repo' no banco
+            # -------------------------------------------------------------
+            if field_type == 'extracted_data':
+                self.db.clear_field(db_id, 'extracted_data')
+                self.db.clear_field(db_id, 'link_repo') # Limpa a URL do repositório
+            else:
+                self.db.clear_field(db_id, field_type)
             
             # Busca o item na Treeview para atualizar visualmente
             items = self.view.tree.get_children()
@@ -548,6 +510,7 @@ class ScraperController:
                     vals[5] = '-' # Sigla (Índice 5)
                     vals[6] = '-' # Universidade (Índice 6)
                     vals[7] = '-' # Programa (Índice 7)
+                    vals[9] = '-' # Coluna Repo (Índice 9) <--- LIMPA VISUALMENTE O LINK
                 elif field_type == 'link_pdf':
                     vals[8] = '-' # Coluna PDF (Índice 8)
                 elif field_type == 'link_repo':
@@ -559,6 +522,9 @@ class ScraperController:
                 # Atualiza também o cache da view para persistência visual
                 self.view.update_row_by_id(db_id, vals[5], vals[6], vals[7], vals[8])
             
-            self.view.update_status(f"Limpo com sucesso: {field_type}")
+            # Mensagem de sucesso ajustada para refletir a ação completa
+            msg_sucesso = "Limpo: Dados Extraídos e URL do Repositório" if field_type == 'extracted_data' else f"Limpo com sucesso: {field_type}"
+            self.view.update_status(msg_sucesso)
+            
         except Exception as e:
             self.view.update_status(f"Erro ao limpar {field_type}: {e}")

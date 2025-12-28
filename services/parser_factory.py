@@ -1,7 +1,7 @@
 # services/parser_factory.py
 
 from parsers.generic_parser import GenericParser
-from parsers.ufop_parser import UFOPParser
+from parsers.ufop_parser import UfopParser
 from parsers.ufms_parser import UFMSParser
 from parsers.ufscar_parser import UFSCARParser
 from parsers.ufrrj_parser import UFRRJParser
@@ -59,11 +59,22 @@ from parsers.uepb_parser import UepbParser
 from parsers.pucrs_parser import PucrsParser
 from parsers.unifor_parser import UniforParser
 from parsers.ufpel_parser import UfpelParser
+from parsers.uninter_parser import UninterParser
+from parsers.ufrn_parser import UfrnParser
+from parsers.ufes_parser import UfesParser
+
+
 class ParserFactory:
     def __init__(self):
         self._default = GenericParser()
         # Mapeamento URL -> Classe
         self._map = {
+            'repositorio.ufes.br': UfesParser,
+            'ufes.br': UfesParser,
+            'repositorio.ufrn.br': UfrnParser,
+            'ufrn.br': UfrnParser,
+            'repositorio.uninter.com': UninterParser,
+            'uninter.com': UninterParser,
             'guaiaca.ufpel.edu.br': UfpelParser,
             'ufpel.edu.br': UfpelParser,
             'uol.unifor.br': UniforParser,
@@ -124,7 +135,7 @@ class ParserFactory:
             'ufpb.br': UfpbParser,
             'repositorio.ufpe.br': UfpeParser,
             'ufpe.br': UfpeParser,
-            "ufop.br": UFOPParser,
+            "ufop.br": UfopParser,
             "ufms.br": UFMSParser,
             "ufscar.br": UFSCARParser,
             "ufrrj.br": UFRRJParser,

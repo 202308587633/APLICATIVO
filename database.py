@@ -48,8 +48,6 @@ class ScraperDB:
             ''')
             conn.commit()
 
-
-
     def execute_query(self, query, params=()):
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -74,9 +72,6 @@ class ScraperDB:
             cursor.execute(query, params)
             return cursor.lastrowid
 
-
-
-    # --- Métodos para Página de Busca ---
     def save_search_page(self, engine, termo, ano, pagina, html_content):
         """Salva o HTML da lista de resultados."""
         query = '''
@@ -92,8 +87,6 @@ class ScraperDB:
             res = conn.execute(query, (termo, str(ano), pagina)).fetchone()
             return res[0] if res else None
 
-
-    # --- Métodos de Status e Recuperação ---    
     def check_html_exists(self, db_id):
         """Verifica quais HTMLs existem e retorna os Links (incluindo PDF) para o menu."""
         # ALTERADO: Adicionado 'link_pdf' (índice 7) na consulta
@@ -129,11 +122,18 @@ class ScraperDB:
                 }
             }
  
-    # Métodos Utilitários (Mantidos/Adaptados)
     def update_record_details(self, db_id, data):
-        query = '''UPDATE trabalhos SET sigla=?, universidade=?, programa=?, link_pdf=? WHERE rowid=?'''
-        self.execute_query(query, (data.get('sigla'), data.get('universidade'), data.get('programa'), data.get('link_pdf'), db_id))
-
+        # Agora inclui 'link_repo' na atualização
+        query = '''UPDATE trabalhos SET sigla=?, universidade=?, programa=?, link_pdf=?, link_repo=? WHERE rowid=?'''
+        self.execute_query(query, (
+            data.get('sigla'), 
+            data.get('universidade'), 
+            data.get('programa'), 
+            data.get('link_pdf'),
+            data.get('link_repo'),  # <-- Novo parâmetro
+            db_id
+        ))
+        
     def fetch_all(self):
         query = '''SELECT rowid, termo, ano, titulo, autor, sigla, universidade, programa, link_pdf, link_repo, link_bdtd FROM trabalhos ORDER BY rowid ASC'''
         with self._get_connection() as conn:
@@ -194,3 +194,4 @@ class ScraperDB:
         except Exception as e:
             print(f"Erro ao buscar amostra: {e}")
             return []
+        

@@ -1,108 +1,70 @@
 import re
-from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from parsers.base_parser import BaseParser
+from parsers.dspace_jspui import DSpaceJSPUIParser
 
-class UFRNParser(BaseParser):
+class UfrnParser(DSpaceJSPUIParser):
     def __init__(self):
         super().__init__(sigla="UFRN", universidade="Universidade Federal do Rio Grande do Norte")
 
-    def extract_pure_soup(self, html_content, url, on_progress=None):
+    def _find_program(self, soup):
         """
-        Extrai dados do repositório da UFRN (DSpace 7+ / Angular).
-        
-        Estratégia de Extração:
-        - Programa: Localizado na tabela de metadados, na linha 'Coleções'.
-          O parser tenta limpar o nome (ex: de 'PPGDIR - Mestrado em Direito' para 'Direito').
-        - PDF: Prioriza a meta tag 'citation_pdf_url'.
+        Estratégia específica para UFRN (DSpace 7.x/Angular).
+        Busca nos Breadcrumbs o item que contém "Programa de Pós-Graduação".
+        Ex: Início > BDTD > Programa de Pós-Graduação em Direito > ...
         """
-        soup = BeautifulSoup(html_content, 'html.parser')
+        # 1. Estratégia Breadcrumbs
+        crumbs = soup.select('ol.breadcrumb li')
+        for crumb in crumbs:
+            text = crumb.get_text(strip=True)
+            # Verifica se o breadcrumb é explicitamente um Programa de Pós
+            if "Programa de Pós-Graduação" in text:
+                return text
+
+        # 2. Estratégia Meta Tag (DC.publisher.program) - Comum na UFRN
+        program_meta = soup.find('meta', attrs={'name': 'citation_publisher'})
+        # Às vezes a UFRN coloca o programa no 'publisher', mas geralmente é a universidade.
+        # Vamos verificar se há algum meta específico ou confiar no breadcrumb.
         
-        data = {
-            'sigla': self.sigla,
-            'universidade': self.universidade,
-            'programa': '-',
-            'link_pdf': '-'
-        }
+        # 3. Fallback: Padrão da classe pai
+        return super()._find_program(soup)
 
-        if on_progress: on_progress("UFRN: Analisando estrutura da página...")
-
-        # --- 1. EXTRAÇÃO DO PROGRAMA ---
-        # Busca baseada no fragmento: <th>Coleções</th><td><a ...>PPGDIR - Mestrado em Direito</a></td>
-        try:
-            found_program = None
-            
-            # Procura pelo cabeçalho (TH) que contém "Coleções"
-            collections_th = soup.find('th', string=re.compile(r'Coleções', re.I))
-            
-            if collections_th:
-                # O valor (TD) geralmente é o irmão adjacente ao TH na estrutura de tabela padrão do DSpace
-                collections_td = collections_th.find_next_sibling('td')
-                
-                if collections_td:
-                    # Busca o link dentro do TD
-                    program_link = collections_td.find('a')
-                    if program_link:
-                        raw_text = program_link.get_text(strip=True)
-                        # Exemplo esperado: "PPGDIR - Mestrado em Direito"
-                        
-                        # Lógica de limpeza para extrair apenas "Direito"
-                        # 1. Separa pelo hífen
-                        parts = raw_text.split('-')
-                        if len(parts) > 1:
-                            # Pega a parte descritiva (ex: " Mestrado em Direito")
-                            candidate = parts[-1].strip()
-                            
-                            # 2. Tenta remover "Mestrado em" ou "Doutorado em" para isolar o nome do programa
-                            clean_match = re.search(r'(?:Mestrado|Doutorado|Pós-Graduação)\s+(?:em|no|na)?\s+(.+)', candidate, re.I)
-                            if clean_match:
-                                found_program = clean_match.group(1).strip()
-                            else:
-                                found_program = candidate
-                        else:
-                            # Se não tiver hífen, usa o texto completo (fallback)
-                            found_program = raw_text
-
-            if found_program:
-                data['programa'] = found_program
-                if on_progress: on_progress(f"UFRN: Programa identificado como '{found_program}'.")
+    def _clean_program_name(self, raw):
+        """
+        Limpeza específica para UFRN.
+        Transforma "Programa de Pós-Graduação em Direito" em "Direito".
+        """
+        # Remove "Programa de Pós-Graduação em/no/na"
+        clean = re.sub(r'Programa de Pós-Graduação (?:em|no|na)\s+', '', raw, flags=re.IGNORECASE)
+        
+        # Remove siglas de programas que às vezes aparecem nos breadcrumbs (Ex: "PPGDIR - Mestrado em Direito")
+        if " - " in clean:
+            # Se tiver hífen, geralmente o nome do curso está na segunda parte ou é o próprio nome limpo
+            # Ex: "PPGDIR - Mestrado em Direito" -> "Mestrado em Direito" -> "Direito"
+            parts = clean.split(" - ")
+            # Pega a parte mais descritiva (geralmente a última ou a que tem "Mestrado/Doutorado")
+            candidate = parts[-1]
+            if "Mestrado" in candidate or "Doutorado" in candidate:
+                clean = candidate
             else:
-                if on_progress: on_progress("UFRN: Campo 'Coleções' não encontrado ou vazio.")
+                # Se não tiver indicativo de grau, assume a limpeza padrão da primeira parte se for sigla
+                # Mas no caso da UFRN, o breadcrumb principal é "Programa de Pós...", que já foi limpo acima.
+                pass
 
-        except Exception as e:
-            if on_progress: on_progress(f"UFRN: Erro ao extrair programa: {str(e)}")
+        # Chama a limpeza padrão (remove "Mestrado em", etc.)
+        return super()._clean_program_name(clean)
 
-        # --- 2. EXTRAÇÃO DO PDF ---
-        try:
-            pdf_url = None
-            
-            # Estratégia A: Meta Tag citation_pdf_url (Presente no HTML de exemplo da UFRN)
-            # <meta name="citation_pdf_url" content="...">
-            pdf_meta = soup.find('meta', attrs={'name': 'citation_pdf_url'})
-            if pdf_meta:
-                pdf_url = pdf_meta.get('content')
-            
-            # Estratégia B: Busca genérica por links de bitstream/download (Fallback)
-            if not pdf_url:
-                # Procura links que contenham 'bitstream' E ('download' OU terminem em .pdf)
-                link_tag = soup.find('a', href=lambda h: h and 'bitstreams' in h and ('download' in h or h.lower().endswith('.pdf')))
-                if link_tag:
-                    pdf_url = link_tag['href']
+    def _find_pdf(self, soup, base_url):
+        """
+        Aprimora busca de PDF para suportar DSpace 7 Angular.
+        """
+        # 1. Tenta citation_pdf_url (Presente no exemplo)
+        pdf = super()._find_pdf(soup, base_url)
+        if pdf:
+            return pdf
 
-            # Estratégia C: Botão específico "Baixar" (visto no HTML da UFRN)
-            if not pdf_url:
-                dl_btn = soup.find('a', class_=lambda c: c and 'btn-primary' in c, string=re.compile(r'Baixar', re.I))
-                if dl_btn and dl_btn.get('href'):
-                    pdf_url = dl_btn['href']
+        # 2. Busca links de download explícitos do Angular (bitstreams/.../download)
+        dl_link = soup.find('a', href=lambda h: h and '/bitstreams/' in h and '/download' in h)
+        if dl_link:
+            return urljoin(base_url, dl_link['href'])
 
-            if pdf_url:
-                # Garante que a URL seja absoluta
-                data['link_pdf'] = urljoin(url, pdf_url)
-                if on_progress: on_progress("UFRN: PDF localizado com sucesso.")
-            else:
-                if on_progress: on_progress("UFRN: PDF não localizado.")
-
-        except Exception as e:
-            if on_progress: on_progress(f"UFRN: Erro ao extrair PDF: {str(e)}")
-
-        return data
+        return None

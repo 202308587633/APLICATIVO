@@ -130,82 +130,6 @@ class BDTDStrategy:
         finally:
             if driver: driver.quit()
 
-    def _fetch_university_data(self, resp_bdtd, on_progress=None):
-        """
-        Tenta encontrar o link do repositório original na página da BDTD.
-        Ignora links que contenham 'lattes'.
-        """
-        url_bdtd = resp_bdtd.url
-        
-        # Validação para ignorar links Lattes
-        def is_valid(url):
-            return url and "lattes" not in url.lower()
-
-        # Caso 1: Redirecionamento direto (URL já não é BDTD)
-        if "bdtd.ibict.br" not in url_bdtd:
-            if is_valid(url_bdtd):
-                if on_progress: on_progress("Redirecionamento externo detectado.")
-                try: return self.download_page(url_bdtd, on_progress)
-                except: return url_bdtd, ""
-            else:
-                # Se redirecionou para Lattes, consideramos que não serviu como repositório
-                if on_progress: on_progress("Redirecionamento para Lattes ignorado.")
-                # Continua para tentar analisar o HTML original se possível, 
-                # mas geralmente o 'resp_bdtd' já é o conteúdo do redirecionamento.
-                # Nesse caso, retornará a URL original da BDTD no final como fallback.
-
-        # Caso 2: Analisar HTML para achar o link
-        if on_progress: on_progress("Buscando link original na BDTD...")
-        try:
-            soup = BeautifulSoup(resp_bdtd.content, 'html.parser')
-            found_link = None
-            
-            # Estratégia A: Tabela de metadados
-            # Varre cabeçalhos buscando termos chave
-            for th in soup.find_all('th'):
-                if any(x in th.get_text() for x in ["Link de acesso", "Texto completo", "URI", "Online"]):
-                    td = th.find_next_sibling('td')
-                    if td:
-                        # Itera sobre TODOS os links da célula (para pular o Lattes se for o primeiro)
-                        for link in td.find_all('a', href=True):
-                            href = link['href']
-                            if is_valid(href):
-                                found_link = href
-                                break # Encontrou um link válido, para de procurar na célula
-                    if found_link: break # Encontrou na tabela, para de procurar linhas
-            
-            # Estratégia B: Botão Online (comum na interface nova)
-            if not found_link:
-                access = soup.select_one('.onlineUrl')
-                if access:
-                    # Itera sobre links dentro do botão/container
-                    for link in access.find_all('a', href=True):
-                        href = link['href']
-                        if is_valid(href):
-                            found_link = href
-                            break
-
-            # Estratégia C: Varredura genérica em qualquer tabela
-            if not found_link:
-                main_table = soup.find('table', class_='table')
-                if main_table:
-                    for link in main_table.find_all('a', href=True):
-                        href = link['href']
-                        # Filtros de domínio e palavras-chave + filtro Lattes
-                        if "bdtd.ibict.br" not in href and \
-                           any(x in href for x in ['handle', 'bitstream', 'repositorio', '.br/']) and \
-                           is_valid(href):
-                            found_link = href
-                            break
-
-            if found_link:
-                if on_progress: on_progress(f"Baixando repositório: {found_link[:40]}...")
-                try: return self.download_page(found_link, on_progress)
-                except: return found_link, ""
-            
-            return url_bdtd, ""
-        except: return url_bdtd, ""
-        
     def parse(self, soup, on_progress=None):
         """
         Processa a lista de resultados da busca na BDTD.
@@ -261,6 +185,79 @@ class BDTDStrategy:
             except: continue
         return items
 
+    def _fetch_university_data(self, resp_bdtd, on_progress=None):
+        """
+        Tenta encontrar o link do repositório original na página da BDTD.
+        Ignora links que contenham 'lattes' ou 'buscatextual'.
+        """
+        url_bdtd = resp_bdtd.url
+        
+        # Validação atualizada: Ignora Lattes E Buscatextual
+        def is_valid(url):
+            if not url: return False
+            url_lower = url.lower()
+            return "lattes" not in url_lower and "buscatextual" not in url_lower
+
+        # Caso 1: Redirecionamento direto (URL já não é BDTD)
+        if "bdtd.ibict.br" not in url_bdtd:
+            if is_valid(url_bdtd):
+                if on_progress: on_progress("Redirecionamento externo detectado.")
+                try: return self.download_page(url_bdtd, on_progress)
+                except: return url_bdtd, ""
+            else:
+                # Se redirecionou para Lattes ou Buscatextual, ignoramos e tentamos analisar o conteúdo
+                if on_progress: on_progress("Redirecionamento para link inválido (Lattes/Buscatextual) ignorado.")
+
+        # Caso 2: Analisar HTML para achar o link
+        if on_progress: on_progress("Buscando link original na BDTD...")
+        try:
+            soup = BeautifulSoup(resp_bdtd.content, 'html.parser')
+            found_link = None
+            
+            # Estratégia A: Tabela de metadados
+            for th in soup.find_all('th'):
+                if any(x in th.get_text() for x in ["Link de acesso", "Texto completo", "URI", "Online"]):
+                    td = th.find_next_sibling('td')
+                    if td:
+                        # Itera sobre TODOS os links da célula
+                        for link in td.find_all('a', href=True):
+                            href = link['href']
+                            if is_valid(href):
+                                found_link = href
+                                break 
+                    if found_link: break
+            
+            # Estratégia B: Botão Online (comum na interface nova)
+            if not found_link:
+                access = soup.select_one('.onlineUrl')
+                if access:
+                    for link in access.find_all('a', href=True):
+                        href = link['href']
+                        if is_valid(href):
+                            found_link = href
+                            break
+
+            # Estratégia C: Varredura genérica em qualquer tabela
+            if not found_link:
+                main_table = soup.find('table', class_='table')
+                if main_table:
+                    for link in main_table.find_all('a', href=True):
+                        href = link['href']
+                        # Filtros de domínio + validação atualizada
+                        if "bdtd.ibict.br" not in href and \
+                           any(x in href for x in ['handle', 'bitstream', 'repositorio', '.br/']) and \
+                           is_valid(href):
+                            found_link = href
+                            break
+
+            if found_link:
+                if on_progress: on_progress(f"Baixando repositório: {found_link[:40]}...")
+                try: return self.download_page(found_link, on_progress)
+                except: return found_link, ""
+            
+            return url_bdtd, ""
+        except: return url_bdtd, ""
+
 class GoogleStrategy:
     def get_url(self, term, year, page_num):
         start = (page_num - 1) * 10
@@ -289,3 +286,5 @@ class GoogleStrategy:
                 })
             except: pass
         return items
+    
+    
