@@ -1,106 +1,84 @@
+import pandas as pd
 import sqlite3
-import csv
 import os
 
-# Configurações
-DB_PATH = os.path.join('instance', 'trabalhos.db')
-CSV_FILES = [
-    'programas de pós-graduação_1.csv',
-    'programas de pós-graduação_2.csv'
-]
+# 1. AJUSTE: Caminho correto do banco usado pela aplicação
+# Garante que salva dentro da pasta 'instance'
+if not os.path.exists('instance'):
+    os.makedirs('instance')
+    
+DB_NAME = os.path.join("instance", "trabalhos.db")
 
-def criar_tabela_programas(cursor):
-    """Cria a tabela para armazenar os programas de pós-graduação."""
-    print("Verificando/Criando tabela 'programas_pos'...")
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS programas_pos (
-            codigo_programa TEXT PRIMARY KEY,
-            nome_programa TEXT,
-            sigla_ies TEXT,
-            grau_academico TEXT,
-            modalidade TEXT,
-            nota_programa TEXT,
-            situacao_programa TEXT,
-            forma_associativa TEXT,
-            area_avaliacao TEXT,
-            area_conhecimento TEXT,
-            grande_area_conhecimento TEXT
-        )
-    ''')
-
-def importar_csv(arquivo, cursor):
-    """Lê um arquivo CSV e insere os dados no banco."""
-    if not os.path.exists(arquivo):
-        print(f"ERRO: Arquivo '{arquivo}' não encontrado.")
+def importar_dados():
+    # Lista dos arquivos CSV
+    arquivos_csv = [
+        "programas de pós-graduação_1.csv",
+        "programas de pós-graduação_2.csv"
+    ]
+    
+    dfs = []
+    
+    print(f"--- Conectando ao banco: {DB_NAME} ---")
+    
+    # 1. Lê cada arquivo CSV
+    for arquivo in arquivos_csv:
+        if os.path.exists(arquivo):
+            try:
+                # Lê o CSV
+                df = pd.read_csv(arquivo)
+                dfs.append(df)
+                print(f"Lido: {arquivo} ({len(df)} registros)")
+            except Exception as e:
+                print(f"Erro ao ler {arquivo}: {e}")
+        else:
+            print(f"Arquivo não encontrado: {arquivo}")
+    
+    if not dfs:
+        print("Nenhum dado para importar.")
         return
 
-    print(f"Importando: {arquivo}...")
+    # 2. Junta todos os dados
+    df_final = pd.concat(dfs, ignore_index=True)
     
-    with open(arquivo, mode='r', encoding='utf-8') as f:
-        # DictReader usa a primeira linha como chave do dicionário
-        reader = csv.DictReader(f)
-        
-        count = 0
-        for row in reader:
-            # Mapeamento das colunas do CSV para o Banco
-            # CSV Headers: Código Programa,Nome do programa,Sigla IES,Grau acadêmico Atual do PPG,
-            # Nome Modalidade,Nota do Programa,Situação Programa,Programa em Forma Associativa,
-            # Área de Avaliação,Área Conhecimento,Grande área de conhecimento
-            
-            data = (
-                row.get('Código Programa', '').strip(),
-                row.get('Nome do programa', '').strip(),
-                row.get('Sigla IES', '').strip(),
-                row.get('Grau acadêmico Atual do PPG', '').strip(),
-                row.get('Nome Modalidade', '').strip(),
-                row.get('Nota do Programa', '').strip(),
-                row.get('Situação Programa', '').strip(),
-                row.get('Programa em Forma Associativa', '').strip(),
-                row.get('Área de Avaliação', '').strip(),
-                row.get('Área Conhecimento', '').strip(),
-                row.get('Grande área de conhecimento', '').strip()
-            )
+    # 3. AJUSTE: Renomeia para as colunas exatas esperadas pelo database.py e view.py
+    mapa_colunas = {
+        'Código Programa': 'codigo_programa',
+        'Nome do programa': 'nome_programa',
+        'Sigla IES': 'sigla_ies',
+        'Grau acadêmico Atual do PPG': 'grau_academico',
+        'Nome Modalidade': 'modalidade',
+        'Nota do Programa': 'nota_programa',
+        'Situação Programa': 'situacao_programa',
+        'Programa em Forma Associativa': 'forma_associativa',
+        'Área de Avaliação': 'area_avaliacao',
+        'Área Conhecimento': 'area_conhecimento',
+        'Grande área de conhecimento': 'grande_area_conhecimento'
+    }
+    
+    # Filtra apenas as colunas que existem no CSV e renomeia
+    cols_to_rename = {k: v for k, v in mapa_colunas.items() if k in df_final.columns}
+    df_final.rename(columns=cols_to_rename, inplace=True)
 
-            # Usamos INSERT OR REPLACE para evitar duplicatas se rodar o script 2x
-            cursor.execute('''
-                INSERT OR REPLACE INTO programas_pos (
-                    codigo_programa, nome_programa, sigla_ies, grau_academico, 
-                    modalidade, nota_programa, situacao_programa, forma_associativa, 
-                    area_avaliacao, area_conhecimento, grande_area_conhecimento
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', data)
-            count += 1
-            
-        print(f"-> {count} registros processados em '{arquivo}'.")
+    # Mantém apenas as colunas que interessam ao banco para evitar sujeira
+    colunas_finais = list(mapa_colunas.values())
+    # Garante que só tentamos salvar colunas que realmente existem após o rename
+    colunas_para_salvar = [c for c in colunas_finais if c in df_final.columns]
+    df_final = df_final[colunas_para_salvar]
 
-def main():
-    # Garante que a pasta instance existe
-    if not os.path.exists('instance'):
-        os.makedirs('instance')
-        
+    # 4. Grava no Banco de Dados
+    conn = None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-
-        # 1. Cria a tabela
-        criar_tabela_programas(cursor)
-
-        # 2. Importa os arquivos
-        for csv_file in CSV_FILES:
-            importar_csv(csv_file, cursor)
-
-        # 3. Salva e fecha
-        conn.commit()
-        print("\nImportação concluída com sucesso!")
-        print(f"Banco de dados atualizado: {DB_PATH}")
+        conn = sqlite3.connect(DB_NAME)
         
-    except sqlite3.Error as e:
-        print(f"Erro no Banco de Dados: {e}")
+        # AJUSTE: Nome da tabela deve ser 'programas_pos'
+        df_final.to_sql('programas_pos', conn, if_exists='replace', index=False)
+        
+        print(f"\nSucesso! {len(df_final)} registros importados para a tabela 'programas_pos'.")
+        
     except Exception as e:
-        print(f"Erro inesperado: {e}")
+        print(f"\nErro ao gravar no banco: {e}")
     finally:
-        if 'conn' in locals():
-            conn.close()
+        if conn: conn.close()
 
 if __name__ == "__main__":
-    main()
+    importar_dados()

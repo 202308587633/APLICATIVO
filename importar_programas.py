@@ -2,26 +2,23 @@ import pandas as pd
 import sqlite3
 import os
 
-# Nome do banco de dados da sua aplicação
+# Configura o caminho para a raiz
 DB_NAME = "resultados_scraper.db"
 
 def importar_dados():
-    # Lista dos arquivos CSV que você enviou
     arquivos_csv = [
-        "programas de pós-graduação_2.csv",
-        "programas de pós-graduação_1.csv"
+        "programas de pós-graduação_1.csv",
+        "programas de pós-graduação_2.csv"
     ]
     
     dfs = []
+    print(f"--- Conectando ao banco na raiz: {DB_NAME} ---")
     
-    print("--- Iniciando Importação ---")
-    
-    # 1. Lê cada arquivo CSV
     for arquivo in arquivos_csv:
         if os.path.exists(arquivo):
             try:
-                # Lê o CSV (o separador padrão costuma ser vírgula, mas ajustamos se necessário)
-                df = pd.read_csv(arquivo)
+                # O separador dos seus CSVs parece ser vírgula
+                df = pd.read_csv(arquivo, sep=',', encoding='utf-8')
                 dfs.append(df)
                 print(f"Lido: {arquivo} ({len(df)} registros)")
             except Exception as e:
@@ -33,49 +30,45 @@ def importar_dados():
         print("Nenhum dado para importar.")
         return
 
-    # 2. Junta todos os dados em um único DataFrame
+    # Junta os dados
     df_final = pd.concat(dfs, ignore_index=True)
     
-    # 3. Renomeia as colunas para um padrão compatível com SQL (sem espaços/acentos)
+    # Mapeamento exato das colunas do CSV para a tabela 'programas_pos'
     mapa_colunas = {
         'Código Programa': 'codigo_programa',
         'Nome do programa': 'nome_programa',
         'Sigla IES': 'sigla_ies',
         'Grau acadêmico Atual do PPG': 'grau_academico',
         'Nome Modalidade': 'modalidade',
-        'Nota do Programa': 'nota',
-        'Situação Programa': 'situacao',
-        'Programa em Forma Associativa': 'associativo',
+        'Nota do Programa': 'nota_programa',
+        'Situação Programa': 'situacao_programa',
+        'Programa em Forma Associativa': 'forma_associativa',
         'Área de Avaliação': 'area_avaliacao',
         'Área Conhecimento': 'area_conhecimento',
-        'Grande área de conhecimento': 'grande_area'
+        'Grande área de conhecimento': 'grande_area_conhecimento'
     }
     
-    # Verifica se as colunas existem antes de renomear para evitar erros
+    # Renomeia as colunas
     cols_to_rename = {k: v for k, v in mapa_colunas.items() if k in df_final.columns}
     df_final.rename(columns=cols_to_rename, inplace=True)
+    
+    # Seleciona apenas as colunas que interessam ao banco
+    colunas_banco = list(mapa_colunas.values())
+    df_final = df_final[[c for c in colunas_banco if c in df_final.columns]]
 
-    # 4. Grava no Banco de Dados
     conn = None
     try:
         conn = sqlite3.connect(DB_NAME)
         
-        # 'if_exists="replace"' recria a tabela. Use "append" se quiser apenas adicionar.
-        # Index=False evita criar uma coluna extra para o índice do pandas.
-        df_final.to_sql('programas_pos_graduacao', conn, if_exists='replace', index=False)
+        # IMPORTANTE: Usa 'programas_pos' (mesmo nome que database.py usa)
+        df_final.to_sql('programas_pos', conn, if_exists='replace', index=False)
         
-        print(f"\nSucesso! {len(df_final)} registros foram gravados na tabela 'programas_pos_graduacao'.")
-        
-        # Cria um índice para busca rápida pelo nome do programa (útil para o seu scraper)
-        cursor = conn.cursor()
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_nome_programa ON programas_pos_graduacao (nome_programa)")
-        conn.commit()
+        print(f"\nSucesso! {len(df_final)} registros salvos na tabela 'programas_pos' em '{DB_NAME}'.")
         
     except Exception as e:
-        print(f"Erro ao gravar no banco de dados: {e}")
+        print(f"\nErro ao gravar no banco: {e}")
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
 
 if __name__ == "__main__":
     importar_dados()
